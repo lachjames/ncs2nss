@@ -1,0 +1,25 @@
+; 93 bytes, 13 instructions
+
+; Engine types:
+; E0: Effect
+; E1: Event
+; E2: Location
+; E3: Talent
+
+_start:
+  JSR main
+  RETN
+
+main: ; void main()
+  RSADDO
+  CONSTI 0
+  CONSTS "end_cut2_sith5"
+  ACTION GetObjectByTag 2
+  CPDOWNSP -8 4
+  MOVSP -4
+  CONSTI 1
+  CPTOPSP -8 4
+  ACTION SetPlotFlag 2
+  MOVSP -4
+  RETN
+

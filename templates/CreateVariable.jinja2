@@ -1,0 +1,1 @@
+{{ x.var_type|convert }} {{ x.var_name|convert }} {% if x.var_expression != None %}= {{ x.var_expression|convert }}{% else %}= {{ x.default_value() }}{% endif %};

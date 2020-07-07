@@ -1,0 +1,11 @@
+{% if x.expression == [] -%}
+    else {
+        {{ x.body|convert }};
+    }
+{%- else -%}
+    {% for exp in x.expression -%}
+        {% if x.is_first and exp == x.expression[0] %}{% else %}else {% endif %}if (N({{ x.lhs|convert }}) == N({{ exp|convert }})) {
+            {{ x.body|convert }};
+        }
+    {%- endfor %}
+{%- endif %}

@@ -1,0 +1,5 @@
+{% if x.default_expression == None %}
+{{ x.var_type|convert }} {{ x.var_name|convert }}
+{% else %}
+{{ x.var_type|convert }} {{ x.var_name|convert }} = {{ x.default_expression|convert }}
+{% endif %}
