@@ -35,7 +35,7 @@ def hex_int(x):
     "JNZ VALUE SEMI"
 )
 def cond_jump(p):
-    return s.ConditionalJump(p[1].getstr())
+    return s.ConditionalJump(p[0].getstr(), p[1].getstr())
 
 
 @register_production(
@@ -52,6 +52,14 @@ def jump(p):
 )
 def jsr(p):
     return s.JumpSubroutine(p[1].getstr())  # hex_int(p[1].getstr()))
+
+
+@register_production(
+    "ss_jump_to_subroutine",
+    "SSJSR VALUE SEMI"
+)
+def jsr(p):
+    return s.SSJumpSubroutine(p[1].getstr())  # hex_int(p[1].getstr()))
 
 
 @register_production(
@@ -112,7 +120,8 @@ def move_sp(p):
     "RSADDF SEMI",
     "RSADDS SEMI",
     "RSADDO SEMI",
-    "RSADDLOC SEMI"
+    "RSADDLOC SEMI",
+    "RSADDE0 SEMI", "RSADDE1 SEMI", "RSADDE2 SEMI", "RSADDE3 SEMI", "RSADDE4 SEMI", "RSADDE5 SEMI",
 )
 def rsadd_command(p):
     return s.RSAdd(p[0].getstr())
@@ -144,8 +153,9 @@ def action(p):
         # hex_int(p[5].getstr())
     )
 
+
 @register_production(
-    "action",
+    "ssaction",
     "SSACTION VALUE VALUE SEMI"
 )
 def ssaction(p):
@@ -155,8 +165,6 @@ def ssaction(p):
         # hex_int(p[3].getstr()),
         # hex_int(p[5].getstr())
     )
-
-
 
 
 @register_production(
@@ -243,11 +251,11 @@ def stack_op(p):
 
 @register_production(
     "destruct",
-    "DESTRUCT VALUE VALUE SEMI"
+    "DESTRUCT VALUE VALUE VALUE SEMI"
 )
 def destruct(p):
     # raise NotImplementedError()
-    return s.Destruct()
+    return s.Destruct(hex_int(p[1].getstr()), hex_int(p[2].getstr()), hex_int(p[3].getstr()))
 
 
 base_ops = [
@@ -296,9 +304,17 @@ def store_state_return(p):
 def noop(p):
     return s.NoOp()
 
+
 @register_production(
-    "size",
-    "T VALUE SEMI"
+    "iretn",
+    "INLINERETN SEMI"
 )
-def size(p):
-    return s.Size(hex_int(p[1].getstr()))
+def iretn(p):
+    return s.InlineReturn()
+
+# @register_production(
+#     "size",
+#     "T VALUE SEMI"
+# )
+# def size(p):
+#     return s.Size(hex_int(p[1].getstr()))

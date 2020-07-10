@@ -1,0 +1,28 @@
+; 75272 bytes, 11698 instructions
+
+; Engine types:
+; E0: Effect
+; E1: Event
+; E2: Location
+; E3: Talent
+
+_start:
+    JSR _global
+    RETN
+
+_global:
+    RSADDI
+    CONSTI 0
+    CPDOWNSP -8 4
+    JSR main
+    RESTOREBP
+    MOVSP -580
+    RETN
+
+main:
+    RSADDO
+    RETN
+
+sub_00001641:
+    ACTION TalentSpell 1
+    RETN

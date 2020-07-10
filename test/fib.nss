@@ -13,6 +13,6 @@ void main() {
             b += a;
             a = tmp;
         }
-        // PrintInteger(b);
+        PrintInteger(b);
     }
 }

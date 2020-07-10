@@ -16,14 +16,17 @@
   <component name="PropertiesComponent">
     <property name="WebServerToolWindowFactoryState" value="false" />
     <property name="last_opened_file_path" value="$PROJECT_DIR$/test" />
+    <property name="node.js.detected.package.eslint" value="true" />
+    <property name="node.js.path.for.package.eslint" value="project" />
+    <property name="node.js.selected.package.eslint" value="(autodetect)" />
     <property name="settings.editor.selected.configurable" value="preferences.lookFeel" />
   </component>
   <component name="RecentsManager">
-    <key name="MoveFile.RECENT_KEYS">
-      <recent name="D:\KOTOR\KOTOR1\KOTOR\tools\dencs\dencs_py" />
-    </key>
     <key name="CopyFile.RECENT_KEYS">
       <recent name="D:\KOTOR\KOTOR1\KOTOR\tools\dencs\dencs_py\test" />
+      <recent name="D:\KOTOR\KOTOR1\KOTOR\tools\dencs\dencs_py" />
+    </key>
+    <key name="MoveFile.RECENT_KEYS">
       <recent name="D:\KOTOR\KOTOR1\KOTOR\tools\dencs\dencs_py" />
     </key>
   </component>
@@ -55,7 +58,9 @@
       <workItem from="1593873685721" duration="6153000" />
       <workItem from="1593945562359" duration="43883000" />
       <workItem from="1594057994171" duration="4926000" />
-      <workItem from="1594063465964" duration="15856000" />
+      <workItem from="1594063465964" duration="21749000" />
+      <workItem from="1594255030448" duration="21504000" />
+      <workItem from="1594326206071" duration="27542000" />
     </task>
     <servers />
   </component>
@@ -67,7 +72,9 @@
       <map>
         <entry key="MAIN">
           <value>
-            <State />
+            <State>
+              <option name="COLUMN_ORDER" />
+            </State>
           </value>
         </entry>
       </map>

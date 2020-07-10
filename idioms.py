@@ -1,6 +1,7 @@
 import copy
 
-from data_flow_types import Variable, BinaryOperation, UnaryOperation, LogicalOperation, NSSAssign, NSSCreateLocal, NSSAction, NSSReference, NSSSubCall, NSSSSAction
+from data_flow_types import Variable, BinaryOperation, UnaryOperation, LogicalOperation, NSSAssign, NSSCreateLocal, NSSAction, NSSReference, NSSSubCall, \
+    NSSSSAction, NSSReturnValue
 
 import assembly as asm
 
@@ -86,6 +87,51 @@ class CreateAndAssignVariableIdiom(Idiom):
             j: None
         }
 
+# @register_idiom("assign_and_return")
+# class SSAssignReturn(Idiom):
+#     def recognize(self, i, blocks):
+#         if len(blocks) < 2:
+#             return False
+#
+#         last_block = blocks[-1]
+#         if type(last_block) is not asm.Return:
+#             return False
+#
+#         second_last_block = None
+#         for block in reversed(blocks[:-1]):
+#             if block is not None:
+#                 second_last_block = block
+#                 break
+#
+#         if second_last_block is None:
+#             return False
+#
+#         if type(second_last_block) is not NSSAssign:
+#             return False
+#
+#         return True
+#
+#     def convert(self, i, blocks):
+#         if len(blocks) < 2:
+#             return False
+#
+#         last_block = blocks[-1]
+#         if type(last_block) is not asm.Return:
+#             return False
+#
+#         second_last_block = None
+#         j = -1
+#         for j, block in enumerate(reversed(blocks[:-1])):
+#             if block is not None:
+#                 second_last_block = block
+#                 break
+#
+#         second_last_index = j
+#
+#         return {
+#             -1: NSSReturnValue(second_last_block),
+#             second_last_index: None
+#         }
 
 # @register_idiom("ssaction_declaration")
 # class SSActionDeclaration(Idiom):

@@ -205,6 +205,7 @@ class Subroutine:
         self.commands = commands
         self.name = None
         self.labels = None
+        print(type(self.commands[-1]))
         self.commands.append(Return())
 
         # print(self.commands)
@@ -241,7 +242,8 @@ class Code:
 
 
 class ConditionalJump(Code):
-    def __init__(self, line):
+    def __init__(self, op_type, line):
+        self.op_type = op_type
         self.line = line
 
 
@@ -255,9 +257,22 @@ class JumpSubroutine(Code):
         self.line = line
 
 
+class SSJumpSubroutine(Code):
+    def __init__(self, line):
+        self.line = line
+
+
 class Return(Code):
     def __init__(self):
         pass
+
+
+class InlineReturn(Code):
+    def __init__(self):
+        pass
+
+    def __str__(self):
+        return "return"
 
 
 class CPDownSP(Code):
@@ -335,9 +350,10 @@ class StackOp(Code):
 
 
 class Destruct(Code):
-    def __init__(self, a, b):
+    def __init__(self, a, b, c):
         self.a = a
         self.b = b
+        self.c = c
 
 
 class BaseCmd(Code):
@@ -360,6 +376,7 @@ class StoreStateReturn(Code):
 class Size(Code):
     def __init__(self, size):
         self.size = size
+
 
 class NoOp(Code):
     def __init__(self):

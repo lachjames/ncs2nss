@@ -19,23 +19,26 @@ else:
     process = subprocess.Popen("xt\\ncsdis.exe --assembly --kotor tmp.ncs".format(infile), shell=True, stdout=subprocess.PIPE)
     txt = process.communicate()[0].decode()
 
+    with open("raw.pcode", "w") as f:
+        f.write("\n".join([x.strip() for x in txt.split("\n")]))
+
 # line_map = parsing.line_map(txt)
 # txt, labels = parsing.preprocess(txt)
 
 ncs_program = preprocessing.NCSProgram(txt)
 
-print()
-for sub_name in ncs_program.subs:
-    print("*** SUBROUTINE {} ***".format(sub_name))
-    sub = ncs_program.subs[sub_name]
-    for i, line in enumerate(sub.lines):
-        print("{}: {}".format(i, line), end="")
-        for label in sub.labels:
-            if sub.labels[label] == i:
-                print(" <- " + label, end="")
-                break
-        print()
-    print()
+# print()
+# for sub_name in ncs_program.subs:
+#     print("*** SUBROUTINE {} ***".format(sub_name))
+#     sub = ncs_program.subs[sub_name]
+#     for i, line in enumerate(sub.lines):
+#         print("{}: {}".format(i, line), end="")
+#         for label in sub.labels:
+#             if sub.labels[label] == i:
+#                 print(" <- " + label, end="")
+#                 break
+#         print()
+#     print()
 
 nss_code = ncs_program.to_nss()
 

@@ -58,10 +58,10 @@ class UnaryOperation:
     def __str__(self):
         # if not self.active:
         #     return ""
-        if self.op == "-":
-            return "-{}".format(self.a)
+        if self.op in ("-", "!"):
+            return "({}{})".format(self.op, self.a)
         else:
-            return "{}{}".format(self.a, self.op)
+            return "({}{})".format(self.a, self.op)
 
 
 class LogicalOperation:
@@ -129,6 +129,11 @@ class NSSAction(NSSTerminal):
         return self.get_value()
 
 
+class NSSReturnValue(NSSTerminal):
+    def __str__(self):
+        return "return {}".format(self.expression)
+
+
 class NSSSSAction(NSSAction):
     pass
 
@@ -141,6 +146,26 @@ class NSSReference(NSSTerminal):
 
     def __str__(self):
         return "{}".format(self.expression)
+
+
+class NSSVector(NSSTerminal):
+    def __init__(self, expression):
+        super().__init__(expression)
+
+        self.value = self.expression
+        # self.active = False
+
+    def ref(self, idx):
+        return NSSStructAccess(self.value, idx)
+
+
+class NSSStructAccess(NSSTerminal):
+    def __init__(self, variable, idx):
+        self.variable = variable
+        self.idx = idx
+
+    def __str__(self):
+        return "{}.{}".format(self.variable, self.idx)
 
 
 class NSSGlobal(NSSTerminal):
