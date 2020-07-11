@@ -8,3 +8,5 @@ annotated/
 graphs/
 templates/
 **/*.html
+__pycache__/
+.idea/
