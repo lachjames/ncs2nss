@@ -1,2 +1,8 @@
 # ignore HTML files
-*.html
+html/
+bank/
+kotor_scripts/
+nss/
+ncstest/
+annotated/
+graphs/
