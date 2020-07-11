@@ -61,11 +61,24 @@ class CreateAndAssignVariableIdiom(Idiom):
             if blocks[j] is None:
                 continue
 
+            # We allow blocks of locals to be created and assigned, i.e.
+            # int x; int y; x = 0; y = 0
+            # becomes
+            # int x = 0; int y = 1
+            if type(blocks[j]) is NSSCreateLocal:
+                continue
+
             if type(blocks[j]) is not NSSAssign:
                 # print("Next block was not NSSAssign, but {}".format(type(blocks[j])))
                 return False
 
+            print(blocks[j].var_name, blocks[i].expression)
+            if blocks[j].var_name != blocks[i].expression:
+                return False
+
             return True
+
+        return False
 
     def convert(self, i, blocks):
         create_block = blocks[i]
@@ -73,7 +86,7 @@ class CreateAndAssignVariableIdiom(Idiom):
         j = None
 
         for j in range(i + 1, len(blocks)):
-            if blocks[j] is not None:
+            if type(blocks[j]) is NSSAssign:
                 assign_block = blocks[j]
                 break
 

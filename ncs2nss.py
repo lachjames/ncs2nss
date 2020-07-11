@@ -82,6 +82,7 @@ class NCSProgram:
                     sub = NCSSubprocess(cur_sub_name, cur_sub_lines, cur_sub_labels, retn_type, args)
                     self.subs[cur_sub_name] = sub
 
+                cur_sub_name = line.split(";")[0].strip().replace("_", "").replace(":", "")
                 # Create a new sub
                 if ";" in line:
                     # The line contains some sub metadata
@@ -94,11 +95,13 @@ class NCSProgram:
 
                     print(args)
                     print(retn_type)
+                elif cur_sub_name == "StartingConditional":
+                    retn_type = "int"
+                    args = []
                 else:
                     retn_type = "void"
                     args = []
 
-                cur_sub_name = line.split(";")[0].strip().replace("_", "").replace(":", "")
                 cur_sub_lines = []
                 cur_sub_labels = {}
 
@@ -186,18 +189,12 @@ class NCSProgram:
         codebase = ""
 
         # Print the global sub
-        if "global" in nss_subs:
-            global_sub = nss_subs["global"]
+        if "global" in df_subs:
+            global_sub = df_subs["global"]
             codebase += "// Global Variables\n"
-
-            if "StartingConditional" in global_sub:
-                last = -7
-            elif "main" in global_sub:
-                last = -6
-            else:
-                raise Exception("Could not find script type from global subroutine")
-
-            codebase += "\n".join(x.strip() for x in global_sub.split("\n")[1:last]) + "\n\n"
+            for line in global_sub.commands:
+                if type(line) is data_flow.NSSCreateLocal:
+                    codebase += str(line).strip() + "\n"
 
         codebase += "\n// Signatures\n"
         # Function signatures
@@ -213,8 +210,8 @@ class NCSProgram:
             if sub_name in ("global", "start"):
                 continue
 
-            if sub_name == "StartingConditional":
-                nss_subs[sub_name] = nss_subs[sub_name].replace("void StartingConditional", "int StartingConditional")
+            # if sub_name == "StartingConditional":
+            #     nss_subs[sub_name] = nss_subs[sub_name].replace("void StartingConditional", "int StartingConditional")
 
             codebase += "// {}".format(sub_name) + "\n"
             codebase += nss_subs[sub_name] + "\n"
@@ -246,6 +243,8 @@ class NCSGlobals:
         # exit()
 
     def from_offset(self, bp_offset):
+        if bp_offset not in self.global_vars:
+            return ("unknown_global", "unknown_type")
         return self.global_vars[bp_offset]
 
 
@@ -260,10 +259,10 @@ class NCSSubprocess:
 
         self.arg_types = []
 
-        if self.name in ("global", "main", "StartingConditional"):
+        if self.name in ("global", "main", "StartingConditional"):  # , "StartingConditional"):
             self.num_args = 0
-
-        self.num_args = len(self.args)
+        else:
+            self.num_args = len(self.args)
         # # Check if the second-last
         # elif len(self.lines) < 2:
         #     self.num_args = 0

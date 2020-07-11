@@ -1,37 +1,87 @@
 def main():
-    test = PropagateTable(5, 5)
+    test = PropagateVector(10)
+    for i in range(10):
+        print(test[i], end=" ")
 
-    # Add some values
-    test[0, 0] = "abc"
-    for i in range(5):
-        assert test[i, 0] == "abc"
+    print()
 
-    test[3, 0] = "xyz"
-    for i in range(5):
-        if i < 3:
-            assert test[i, 0] == "abc"
-        else:
-            assert test[i, 0] == "xyz"
+    test[5] = "abc"
+    test[2] = "123"
+    test[7] = "duck"
 
-    test[2, 3] = "test"
-    test[1, 4] = "qwe"
+    for i in range(10):
+        print(test[i], end=" ")
 
-    print(test)
-    for i in range(test.num_commands):
-        print(test.get_frame(i))
+
+# def main():
+#     test = PropagateTable(5, 5)
+#
+#     # Add some values
+#     test[0, 0] = "abc"
+#     for i in range(5):
+#         assert test[i, 0] == "abc"
+#
+#     test[3, 0] = "xyz"
+#     for i in range(5):
+#         if i < 3:
+#             assert test[i, 0] == "abc"
+#         else:
+#             assert test[i, 0] == "xyz"
+#
+#     test[2, 3] = "test"
+#     test[1, 4] = "qwe"
+#
+#     print(test)
+#     for i in range(test.num_commands):
+#         print(test.get_frame(i))
+
+
+class PropagateVector:
+    def __init__(self, size, default_value=None):
+        self.size = size
+        self.default_value = default_value
+
+        self.values = {}
+
+    def __getitem__(self, pos):
+        if len(self.values) == 0:
+            return self.default_value
+
+        max_key = -1
+        for key in self.values:
+            if key < max_key:
+                continue
+            if key > pos:
+                continue
+            max_key = key
+
+        if max_key == -1:
+            return self.default_value
+
+        return self.values[max_key]
+
+    def __setitem__(self, pos, value):
+        self.values[pos] = value
+
+    def __len__(self):
+        return self.size
+
+    def __str__(self):
+        return str(self.values)
 
 
 class PropagateTable:
-    def __init__(self, num_commands, stack_size):
+    def __init__(self, num_commands, stack_size, default_value=None):
         self.num_commands = num_commands
         self.stack_size = stack_size
+        self.default_value = default_value
 
         self.values = [dict() for _ in range(num_commands)]
 
     def get_frame(self, i):
         # Returns the i-th stack frame
 
-        frame = [None] * self.stack_size
+        frame = [self.default_value] * self.stack_size
 
         for j in range(self.stack_size):
             frame[j] = self[i, j]
@@ -47,7 +97,7 @@ class PropagateTable:
 
         # Get the latest item assigned to self.values[cmd]
         if len(self.values[stack_pos]) == 0:
-            return None
+            return self.default_value
 
         max_key = -1
         for key in self.values[stack_pos]:
@@ -56,7 +106,7 @@ class PropagateTable:
             max_key = max(key, max_key)
 
         if max_key == -1:
-            return None
+            return self.default_value
 
         return self.values[stack_pos][max_key]
 

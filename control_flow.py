@@ -142,12 +142,12 @@ def create_basic_blocks(sub):
             # This jumps back to cmd.lineno (as set in the preprocessing stage)
             leader_set.add(int(cmd.lineno))
 
-        # elif type(cmd) is asm.Return:
-        #     # pass
-        #     leader_set.add(i)
+        elif type(cmd) is asm.Return:
+            # pass
+            leader_set.add(i)
 
-        # elif type(cmd) is asm.InlineReturn:
-        #     leader_set.add(i)
+        elif type(cmd) is asm.InlineReturn:
+            leader_set.add(i)
 
     # print(sorted(leader_set))
 
@@ -255,6 +255,13 @@ def create_basic_blocks(sub):
                 del blocks[i]
             else:
                 i += 1
+
+    # Add a dummy final block
+    # dummy_block = BasicBlock(-1, -1)
+    # for block in blocks:
+    #     if len(block.succs) == 0:
+    #         block.succs.add(dummy_block)
+    #         dummy_block.preds.add(block)
 
     for block in blocks:
         last_address = block.address + block.length - 1
@@ -367,7 +374,6 @@ class Interval:
 
     def collapse(self):
         # self.structure_ncond()
-
         self.loop = None
         if self.is_loop():
             self.structure_loop()

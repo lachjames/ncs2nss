@@ -5,7 +5,7 @@ from data_flow_types import Variable, BinaryOperation, UnaryOperation, LogicalOp
 
 import control_flow
 import assembly as asm
-from util import PropagateTable
+from util import PropagateTable, PropagateVector
 
 import copy
 import idioms
@@ -46,25 +46,38 @@ def df_analysis(subroutine, subroutines, global_data):
     with open("html/{}.html".format(subroutine.name), "w") as f:
         f.write(matrix.html())
 
+    # Replace all inactive blocks with None
+    for i in range(len(blocks)):
+        if "active" in dir(blocks[i]) and not blocks[i].active:
+            blocks[i] = None
+
     defined = set()
 
     for i in range(0, matrix.num_commands - 1):
         # We want to check for variables only when space is put on the stack
-        if matrix.sps[i + 1] <= matrix.sps[i]:
+        if (i == 0 and matrix.sps[0] == 0) or matrix.sps[i] <= matrix.sps[i - 1]:
+            # Either this is the first instruction (with no stack push)
+            # or the stack size did not increase here
             continue
+
+        # print(matrix.sps[i+1])
 
         # print("Checking block {}".format(i))
 
-        pos = matrix.sps[i] - 1
+        pos = matrix.top_of_stack(i) - 1
 
         for j in range(i + 1, matrix.num_commands):
-            if matrix.sps[j] < pos:
+            if matrix.sps[j] <= pos:
+                print("{} (from {}) was pushed off the stack in {}".format(pos, i, j))
                 # Variable was pushed off the stack
                 break
 
             if matrix.var_names[j, pos]:
                 if matrix.var_names[j, pos] in defined:
                     break
+
+                if type(matrix.matrix[j, pos]) is NSSSSAction:
+                    continue
 
                 # Variable was assigned so it's a local
                 # Create a new block for the local variable's creation
@@ -77,11 +90,13 @@ def df_analysis(subroutine, subroutines, global_data):
                     if -pos <= len(arg_types):
                         var_type = ObjectType.NAME_MAP[arg_types[-pos + 1]]
                     else:
+                        assert global_data is not None
                         # Get a global variable
                         _, var_type = global_data.from_offset((-pos + 1 - len(arg_types)) * 4)
                 else:
                     var_type = "unknown"
                     print("Warning: failed type inference on cmd {} ({}), getting from pos {}".format(subroutine.commands[i], i, pos))
+                    print(matrix.matrix.get_frame(i))
                     with open("html/dump.html", "w") as f:
                         f.write(matrix.html())
                     exit()
@@ -89,14 +104,11 @@ def df_analysis(subroutine, subroutines, global_data):
 
                 blocks[i] = NSSCreateLocal(var_type, matrix.var_names[j, pos], blocks[i])
 
-                defined.add(matrix.var_names[j, posi])
+                defined.add(matrix.var_names[j, pos])
                 # print("created: {}".format(blocks[i]))
                 break
-
-    # Replace all inactive blocks with None
-    for i in range(len(blocks)):
-        if "active" in dir(blocks[i]) and not blocks[i].active:
-            blocks[i] = None
+        else:
+            print("Failed to find usage of {} as a local variable".format(pos))
 
     reduce_idioms(blocks)
 
@@ -195,6 +207,7 @@ class ObjectType:
 
     DEFAULT_MAP = {
         INT: 0,
+        FLOAT: 0.0,
         STRING: ""
     }
 
@@ -215,8 +228,8 @@ class StackMatrix:
         self.var_names = PropagateTable(num_commands, stack_size)  # [[None for _ in range(stack_size)] for _ in range(num_commands)]
         self.types = PropagateTable(num_commands, stack_size)  # [[None for _ in range(stack_size)] for _ in range(num_commands)]
 
-        self.sps = [0 for _ in range(num_commands)]
-        self.bps = [0 for _ in range(num_commands)]
+        self.sps = PropagateVector(num_commands, default_value=0)  # [0 for _ in range(num_commands)]
+        self.bps = PropagateVector(num_commands, default_value=0)  # [0 for _ in range(num_commands)]
 
         self.num_vars = 0
 
@@ -252,15 +265,17 @@ class StackMatrix:
         return self.types[i, self.sp_offset_to_pos(i, offset)]
 
     def modify_sp(self, i, offset):
-        value = self.sps[i] + offset
-        if value < 0:
-            # This should not be possible, so something's gone wrong
-            # print("INVALID STACK OPERATION DETECTED")
-            # print(self)
-            # raise Exception("Invalid stack operation detected; tried to set sps[{}] to {} (offset {})".format(i, value, offset))
-            pass
-        for j in range(i, self.num_commands):
-            self.sps[j] = value
+        self.sps[i] = self.sps[i] + offset
+        # value = self.sps[i] + offset
+        # if value < 0:
+        #     # This should not be possible, so something's gone wrong
+        #     # print("INVALID STACK OPERATION DETECTED")
+        #     # print(self)
+        #     # raise Exception("Invalid stack operation detected; tried to set sps[{}] to {} (offset {})".format(i, value, offset))
+        #     pass
+        # self.sps[i] = value
+        # for j in range(i, self.num_commands):
+        #     self.sps[j] = value
 
     def set_local(self, i, pos):
         has_set = False
@@ -273,61 +288,6 @@ class StackMatrix:
                 has_set = True
         if has_set:
             self.num_vars += 1
-
-    def __str__(self):
-        string = []
-
-        # Header row
-        string.append(Fore.LIGHTBLUE_EX)
-        string.append("\t")
-        for i in range(self.num_commands):
-            string.append(str(i) + "\t")
-        string.append("\n")
-
-        string.append(Fore.WHITE)
-        for stack_pos in range(self.stack_size):
-            string.append(Fore.LIGHTBLUE_EX)
-            string.append(str(stack_pos) + "\t")
-            string.append(Fore.WHITE)
-            # Header column
-            for cmd in range(self.num_commands):
-                had_value = False
-                if stack_pos >= self.top_of_stack(cmd):
-                    col = Fore.LIGHTRED_EX
-                else:
-                    col = Fore.LIGHTGREEN_EX
-                item = self.matrix[cmd, stack_pos]
-                if item is None:
-                    string.append(col + "--" + Fore.WHITE)
-                else:
-                    had_value = True
-                    val = str(item)
-                    if len(val) > 7:
-                        val = val[:5] + ".."
-                    string.append(col + val + Fore.WHITE)
-                string.append("\t")
-
-                if not had_value:
-                    break
-            string.append("\n")
-
-        string.append(Fore.LIGHTYELLOW_EX)
-        string.append("SP\t")
-        for sp in self.sps:
-            string.append(str(sp))
-            string.append("\t")
-        string.append("\n")
-
-        string.append(Fore.LIGHTCYAN_EX)
-        string.append("BP\t")
-        for bp in self.bps:
-            string.append(str(bp))
-            string.append("\t")
-        string.append("\n")
-
-        string.append(Fore.WHITE)
-
-        return "".join(string)
 
     def html(self):
         preamble = """
@@ -373,13 +333,13 @@ class StackMatrix:
                 break
 
         string.append("<tr style=\"color:{}\">".format(HTMLColors.DARKBLUE) + "<td>SP</td>")
-        for sp in self.sps:
-            string.append("<td>" + str(sp) + "</td>")
+        for idx in range(self.num_commands):
+            string.append("<td>" + str(self.sps[idx]) + "</td>")
         string.append("</tr>")
 
         string.append("<tr style=\"color:{}\">".format(HTMLColors.DARKBLUE) + "<td>BP</td>")
-        for bp in self.bps:
-            string.append("<td>" + str(bp) + "</td>")
+        for idx in range(self.num_commands):
+            string.append("<td>" + str(self.bps[idx]) + "</td>")
         string.append("</tr>")
 
         string.append("</table>")
@@ -390,41 +350,30 @@ def analyze_blocks(sub, subs, global_data):
     cfa = control_flow.ControlFlowAnalysis(sub, True)
     cfg = cfa.cfg
 
-    init_matrix = StackMatrix(len(sub.commands), len(sub.commands), sub)
+    matrix = StackMatrix(len(sub.commands), len(sub.commands), sub)
 
     blocks = [None] * len(sub.commands)
-    retn_matrix = None
-    retn_addr = -1
 
     # Do a depth-first traversal of the cfg, analyzing each block as we go
     done = set()
-    stack = [(cfg.header, init_matrix)]
+    stack = [cfg.header]
     while len(stack) > 0:
-        block, matrix = stack.pop()
-        if block.address > retn_addr:
-            retn_addr = block.address
-            retn_matrix = matrix
+        stack.sort(key=lambda x: -x.address)
+        block = stack.pop()
 
-        # print(block)
         if block in done:
             continue
 
-        new_blocks, block_matrix = analyze_block(block, sub, subs, global_data, matrix)
-
-        # print(" *** Matrix after {} *** ".format(block))
-        # print(block_matrix)
+        new_blocks = analyze_block(block, sub, subs, global_data, matrix)
 
         blocks[block.address:block.address + block.length] = new_blocks
-
         for succ in block.succs:
-            stack.append((succ, copy_obj(block_matrix)))
+            matrix.sps[succ.address] = matrix.sps[block.address + block.length - 1]
+            stack.append(succ)
 
         done.add(block)
 
-    # for block in blocks:
-    #     print(block)
-
-    return blocks, retn_matrix
+    return blocks, matrix
 
 
 def analyze_block(block, sub, subs, global_data, matrix):
@@ -473,7 +422,7 @@ def analyze_block(block, sub, subs, global_data, matrix):
             if stack_pos < 0:
                 # We are copying either an argument or a global
                 arg_ref = -stack_pos - 1
-                print("Referencing {} with {} args".format(arg_ref, subs[sub.name].num_args))
+                # print("Referencing {} with {} args".format(arg_ref, subs[sub.name].num_args))
                 if arg_ref < subs[sub.name].num_args:
                     reference = NSSArgumentAccess("arg" + str(-stack_pos - 1))
                     # TODO: Find the actual type
@@ -483,7 +432,7 @@ def analyze_block(block, sub, subs, global_data, matrix):
                     reference = NSSGlobal(global_name)
                     reference_type = global_type
 
-                    print("Name: {}; Type: {}".format(global_name, global_type))
+                    # print("Name: {}; Type: {}".format(global_name, global_type))
             else:
                 value = matrix.value_from_offset(i, command.a)
                 if type(value) is NSSSSAction:
@@ -497,12 +446,12 @@ def analyze_block(block, sub, subs, global_data, matrix):
                     reference = value
                     reference_type = matrix.types[i, stack_pos]
 
-                elif type(value) is NSSReference:
+                elif type(value) in (NSSReference, NSSArgumentAccess, NSSGlobal):
                     reference = value
                     reference_type = matrix.types[i, stack_pos]
 
                 elif type(value) is Variable and not value.is_set:
-                    assert value.value is not None, "Don't know default value of type {}".format(value.var_type)
+                    # assert value.value is not None, "Don't know default value of type {}".format(value.var_type)
                     reference = value
                     reference_type = matrix.types[i, stack_pos]
 
@@ -510,7 +459,7 @@ def analyze_block(block, sub, subs, global_data, matrix):
                     reference = NSSReference(matrix.var_names[i, stack_pos])
                     reference_type = matrix.types[i, stack_pos]
 
-                matrix.set_local(i, stack_pos)
+                # matrix.set_local(i, stack_pos)
 
             matrix.propagate(reference, reference_type, i, matrix.top_of_stack(i))
             matrix.modify_sp(i, ObjectType.size(reference_type))
@@ -730,7 +679,7 @@ def analyze_block(block, sub, subs, global_data, matrix):
 
             called_sub = subs[sub_name]
             modifier = called_sub.num_args
-            print("Calling sub {} with {} args and retn value {}".format(sub_name, modifier, called_sub.retn_type))
+            # print("Calling sub {} with {} args and retn value {}".format(sub_name, modifier, called_sub.retn_type))
 
             args = []
 
@@ -757,7 +706,8 @@ def analyze_block(block, sub, subs, global_data, matrix):
 
             return_val = NSSSubCall(sub_name, args)
             if subs[sub_name].retn_type == "void":
-                print("Not pushing void return to the stack")
+                # print("Not pushing void return to the stack")
+                pass
             elif subs[sub_name].retn_type == "vector":
                 raise Exception("Vector subprocesses are not currently implemented")
             else:
@@ -912,7 +862,7 @@ def analyze_block(block, sub, subs, global_data, matrix):
 
         blocks.append(return_val)
 
-    return blocks, matrix
+    return blocks
 
 
 def reduce_idioms(blocks):
