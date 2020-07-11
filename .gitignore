@@ -6,3 +6,5 @@ nss/
 ncstest/
 annotated/
 graphs/
+templates/
+**/*.html

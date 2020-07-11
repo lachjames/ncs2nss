@@ -1,5 +1,0 @@
-{% if x.exp_form == "prefix" -%}
-I({{ x.op|convert }}B({{ x.exp|convert }}))
-{%- else -%}
-I(B({{ x.exp|convert }}){{ x.op|convert }})
-{%- endif %}

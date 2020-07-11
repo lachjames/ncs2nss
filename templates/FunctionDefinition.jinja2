@@ -1,5 +1,0 @@
-public static {{ x.return_type|convert }} {{ x.name|convert }} ({{ x.args|convert(", ")}}) {
-    {% for line in x.body -%}
-    {{ line|convert }}{{ line|semicolon }}
-    {% endfor %}
-}
