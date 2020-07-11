@@ -142,12 +142,12 @@ def create_basic_blocks(sub):
             # This jumps back to cmd.lineno (as set in the preprocessing stage)
             leader_set.add(int(cmd.lineno))
 
-        elif type(cmd) is asm.Return:
-            # pass
-            leader_set.add(i)
+        # elif type(cmd) is asm.Return:
+        #     # pass
+        #     leader_set.add(i)
 
-        elif type(cmd) is asm.InlineReturn:
-            leader_set.add(i)
+        # elif type(cmd) is asm.InlineReturn:
+        #     leader_set.add(i)
 
     # print(sorted(leader_set))
 
@@ -222,6 +222,9 @@ def create_basic_blocks(sub):
         # print("SSR Connected {} -> {}".format(block, target))
 
         elif type(last_statement) is asm.Return:
+            pass
+
+        elif str(last_statement).startswith("return "):
             pass
 
         else:
@@ -375,7 +378,6 @@ class Interval:
             print("Did not find a loop")
 
         # self.structure_ncond()
-        # self.structure_if()
 
     def interval_bbs(self):
         bbs = []
@@ -479,25 +481,43 @@ class Interval:
         loop_type = loop.loop_type()
 
         if loop_type is LoopType.PRETESTED:
+            self.header.params["no_if"] = True
             header_succs = list(self.header.succs)
             if header_succs[0] in loop_nodes:
                 loop_follow = header_succs[1]
-            else:
+            elif header_succs[1] in loop_nodes:
                 loop_follow = header_succs[0]
+            else:
+                raise Exception("Invalid do loop detected")
         elif loop_type is LoopType.POSTTESTED:
+
             back_succs = list(back_node.succs)
+            if len(back_succs) == 1 and len(back_node.preds) == 1:
+                real_back_node = list(back_node.preds)[0]
+                real_back_node.params["no_if"] = True
+                real_back_node.params["no_follow"] = True
+                back_succs = list(real_back_node.succs)
+            else:
+                back_node.params["no_follow"] = True
+                back_node.params["no_if"] = True
+
             if back_succs[0] in loop_nodes:
                 loop_follow = back_succs[1]
-            else:
+            elif back_succs[1] in loop_nodes:
                 loop_follow = back_succs[0]
+            else:
+                raise Exception("Invalid while loop detected")
         else:
             loop_follow = None
-            # raise Exception("Infinite loop has no follow")
 
+        loop.follow = loop_follow
         # Find all nodes which link to the loop follow
         for node in loop_nodes:
-            if loop_follow in node.succs:
-                node.params["break"] = True
+            if node in (self.header, back_node):
+                continue
+            # TODO: Implement breaking
+            # if loop_follow in node.succs:
+            #     node.params["break"] = True
 
         self.loop = loop
         self.header_bb().params["loop"] = loop
@@ -556,8 +576,11 @@ class ControlFlowGraph:
             if type(node) is Interval:
                 node = node.header_bb()
 
-            if "loop" in node.params:
+            if "no_if" in node.params:
                 continue
+
+            # if "back_node" in node.params:
+            #     continue
 
             print("Found an if node: {}".format(node))
 
@@ -594,6 +617,32 @@ class ControlFlowGraph:
             node.params["if"] = if_statement
 
         # assert len(unresolved) == 0, "Found unresolved nodes {}".format(unresolved)
+
+    def structure_switch(self):
+        for node in reversed(self.rev_dfs_order()):
+            # if node is not an n-way node, continue
+            case_head = node
+            # Find the end node, which is a node y such that y.idom == x, and
+            # for all z such that z.idom == x, inedges(y) > inedges(z)
+
+            node_is_idom = [b for b in self.blocks if b.idom is node]
+            end_node = max(node_is_idom, key=lambda x: len(x.preds))
+
+            case_nodes = set(case_head)
+            for s in case_head.succs:
+                self.case_nodes(case_nodes, case_head, end_node, s)
+
+            print("Found switch statement")
+            node.params["switch"] = SwitchStatement(end_node, case_nodes, case_head)
+            exit()
+
+    def case_nodes(self, case_nodes, head, end, s):
+        s.case_traversed = True
+        if s != end and "case" not in s.params and s.idom in case_nodes:
+            case_nodes.add(s)
+            for r in s.succs:
+                if not r.case_traversed:
+                    self.case_nodes(case_nodes, head, end, r)
 
     def structure_comp_conds(self):
         change = True
@@ -736,6 +785,7 @@ class ControlFlowGraph:
         # print("{} found in {} intervals".format(node, counter))
 
         self.structure_if()
+        # self.structure_switch()
         self.structure_comp_conds()
 
         return intervals
@@ -891,16 +941,26 @@ class Loop(AST):
             head_succs = list(self.header.header_bb().succs)
         else:
             head_succs = list(self.header.succs)
+
+        print("Back succs: {}; Head succs: {}".format(back_succs, head_succs))
+
+        if len(back_succs) == 1 and len(self.back.preds) == 1:
+            print("Passing the buck back to the previous node as this is a one-way jump")
+            # We check the node before this one as that's the conditional node
+            back_succs = list(self.back.preds)[0].succs
+
         if len(back_succs) == 2:
-            # self.back is conditional so this is post-tested
+            # We think about jumping back, so this is posttested
             if len(head_succs) == 2:
                 if head_succs[0] in self.nodes and head_succs[1] in self.nodes:
+                    # Both places the header node can go are within the loop
                     return LoopType.POSTTESTED
                 else:
                     return LoopType.PRETESTED
             else:
                 return LoopType.POSTTESTED
         else:
+            # We jump back unconditionally, so this might be pre-tested
             if len(head_succs) == 2:
                 return LoopType.PRETESTED
             else:
@@ -946,6 +1006,12 @@ class IfStatement(AST):
     def __init__(self, follow, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.follow = follow
+
+
+class SwitchStatement(AST):
+    def __init__(self, end_node, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.end_node = end_node
 
 
 class BasicBlock:

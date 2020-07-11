@@ -205,8 +205,9 @@ class Subroutine:
         self.commands = commands
         self.name = None
         self.labels = None
-        print(type(self.commands[-1]))
-        self.commands.append(Return())
+
+        if type(self.commands[-1]) is not Return:
+            self.commands.append(Return())
 
         # print(self.commands)
 

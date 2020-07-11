@@ -10,9 +10,10 @@ class Constant:
 
 
 class Variable:
-    def __init__(self, var_type, value):
+    def __init__(self, var_type, value, is_set=True):
         self.var_type = var_type
         self.value = value
+        self.is_set = is_set
 
         self.active = True
 
@@ -88,6 +89,8 @@ class NSSTerminal:
     def __init__(self, expression):
         self.expression = expression
 
+        self.active = True
+
 
 class NSSAssign(NSSTerminal):
     def __init__(self, var_name, expression):
@@ -111,6 +114,11 @@ class NSSCreateLocal(NSSTerminal):
         else:
             return "{} {} = {}".format(self.var_type, self.expression, self.value)
         # return "Define {} (type {})".format(self.expression, self.var_type)
+
+
+class NSSReturnValue(NSSTerminal):
+    def __str__(self):
+        return "return {}".format(self.expression)
 
 
 class NSSAction(NSSTerminal):

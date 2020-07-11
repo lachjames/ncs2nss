@@ -1,7 +1,7 @@
 from data_flow_types import Variable, BinaryOperation, UnaryOperation, LogicalOperation, NSSGlobal, NSSArgumentAccess, NSSAssign, NSSCreateLocal, NSSAction, \
     NSSSSAction, \
     NSSReference, \
-    NSSSubCall, NSSVector
+    NSSSubCall, NSSVector, NSSReturnValue
 
 import control_flow
 import assembly as asm
@@ -55,38 +55,41 @@ def df_analysis(subroutine, subroutines, global_data):
 
         # print("Checking block {}".format(i))
 
-        pos = matrix.sps[i]
+        pos = matrix.sps[i] - 1
 
-        var_pos = matrix.sps[i]
         for j in range(i + 1, matrix.num_commands):
             if matrix.sps[j] < pos:
                 # Variable was pushed off the stack
                 break
 
-            if matrix.var_names[j, pos - 1]:
-                if matrix.var_names[j, pos - 1] in defined:
+            if matrix.var_names[j, pos]:
+                if matrix.var_names[j, pos] in defined:
                     break
 
                 # Variable was assigned so it's a local
                 # Create a new block for the local variable's creation
-                if matrix.types[i, pos - 1] is not None:
-                    var_type = ObjectType.NAME_MAP[matrix.types[i, pos - 1]]
-                elif matrix.types[j, pos - 1] is not None:
-                    var_type = ObjectType.NAME_MAP[matrix.types[j, pos - 1]]
-                elif (pos - 1) < 0:
+                if matrix.types[i, pos] is not None:
+                    var_type = ObjectType.NAME_MAP[matrix.types[i, pos]]
+                elif matrix.types[j, pos] is not None:
+                    var_type = ObjectType.NAME_MAP[matrix.types[j, pos]]
+                elif pos < 0:
                     arg_types = subroutines[subroutine.name].arg_types
-                    if (-(pos - 1)) <= len(arg_types):
-                        var_type = ObjectType.NAME_MAP[arg_types[-pos - 1]]
+                    if -pos <= len(arg_types):
+                        var_type = ObjectType.NAME_MAP[arg_types[-pos + 1]]
                     else:
                         # Get a global variable
-                        _, var_type = global_data.from_offset((-pos - 1 - len(arg_types)) * 4)
+                        _, var_type = global_data.from_offset((-pos + 1 - len(arg_types)) * 4)
                 else:
                     var_type = "unknown"
+                    print("Warning: failed type inference on cmd {} ({}), getting from pos {}".format(subroutine.commands[i], i, pos))
+                    with open("html/dump.html", "w") as f:
+                        f.write(matrix.html())
+                    exit()
                     # raise Exception("Failed to calculate type of block {} = {} with sp = {}".format(i, blocks[i], pos - 1))
 
-                blocks[i] = NSSCreateLocal(var_type, matrix.var_names[j, pos - 1], blocks[i])
+                blocks[i] = NSSCreateLocal(var_type, matrix.var_names[j, pos], blocks[i])
 
-                defined.add(matrix.var_names[j, pos - 1])
+                defined.add(matrix.var_names[j, posi])
                 # print("created: {}".format(blocks[i]))
                 break
 
@@ -188,6 +191,11 @@ class ObjectType:
 
     INV_NAME_MAP = {
         v: k for k, v in NAME_MAP.items()
+    }
+
+    DEFAULT_MAP = {
+        INT: 0,
+        STRING: ""
     }
 
     @staticmethod
@@ -383,15 +391,20 @@ def analyze_blocks(sub, subs, global_data):
     cfg = cfa.cfg
 
     init_matrix = StackMatrix(len(sub.commands), len(sub.commands), sub)
-    command_to_matrix = {}
 
     blocks = [None] * len(sub.commands)
+    retn_matrix = None
+    retn_addr = -1
 
     # Do a depth-first traversal of the cfg, analyzing each block as we go
     done = set()
     stack = [(cfg.header, init_matrix)]
     while len(stack) > 0:
         block, matrix = stack.pop()
+        if block.address > retn_addr:
+            retn_addr = block.address
+            retn_matrix = matrix
+
         # print(block)
         if block in done:
             continue
@@ -401,8 +414,6 @@ def analyze_blocks(sub, subs, global_data):
         # print(" *** Matrix after {} *** ".format(block))
         # print(block_matrix)
 
-        for command in new_blocks:
-            command_to_matrix[command] = block_matrix
         blocks[block.address:block.address + block.length] = new_blocks
 
         for succ in block.succs:
@@ -410,7 +421,10 @@ def analyze_blocks(sub, subs, global_data):
 
         done.add(block)
 
-    return blocks, command_to_matrix[sub.commands[-1]]
+    # for block in blocks:
+    #     print(block)
+
+    return blocks, retn_matrix
 
 
 def analyze_block(block, sub, subs, global_data, matrix):
@@ -435,7 +449,11 @@ def analyze_block(block, sub, subs, global_data, matrix):
         if type(command) is asm.RSAdd:
             # Reserve space on the stack
             var_type = ObjectType.MAP[command.op_type[-1].lower()]
-            var_obj = Variable(var_type, None)
+            if var_type in ObjectType.DEFAULT_MAP:
+                var_obj = Variable(var_type, ObjectType.DEFAULT_MAP[var_type], is_set=False)
+            else:
+                var_obj = Variable(var_type, None, is_set=False)
+
             matrix.propagate(var_obj, var_type, i, matrix.top_of_stack(i))
             matrix.modify_sp(i, ObjectType.size(var_type))
 
@@ -474,9 +492,20 @@ def analyze_block(block, sub, subs, global_data, matrix):
                     # onto the stack rather than executing it like normal
                     reference = matrix.value_from_offset(i, command.a - 4)
                     reference_type = matrix.types[i, stack_pos]
+
+                elif type(value) is NSSSubCall:
+                    reference = value
+                    reference_type = matrix.types[i, stack_pos]
+
                 elif type(value) is NSSReference:
                     reference = value
                     reference_type = matrix.types[i, stack_pos]
+
+                elif type(value) is Variable and not value.is_set:
+                    assert value.value is not None, "Don't know default value of type {}".format(value.var_type)
+                    reference = value
+                    reference_type = matrix.types[i, stack_pos]
+
                 else:
                     reference = NSSReference(matrix.var_names[i, stack_pos])
                     reference_type = matrix.types[i, stack_pos]
@@ -701,39 +730,70 @@ def analyze_block(block, sub, subs, global_data, matrix):
 
             called_sub = subs[sub_name]
             modifier = called_sub.num_args
-
-            print("Sub {} has {} args".format(sub_name, called_sub.num_args))
-            # exit()
+            print("Calling sub {} with {} args and retn value {}".format(sub_name, modifier, called_sub.retn_type))
 
             args = []
-            arg_types = []
-            for pops in range(modifier):
-                args.append(matrix.value_from_offset(i, -4))
-                arg_types.append(matrix.type_from_offset(i, -4))
-                matrix.modify_sp(i, -1)
 
-            called_sub.arg_types = arg_types
+            for pops in range(modifier):
+                arg = matrix.value_from_offset(i, -4)
+                arg_type = matrix.type_from_offset(i, -4)
+                if "active" in dir(arg):
+                    arg.active = False
+                    arg = copy_obj(arg)
+                    arg.active = True
+
+                if arg_type is ObjectType.VECTOR:
+                    if type(arg) is NSSReference:
+                        # We're already passing a variable through, so just leave it be
+                        pass
+                    else:
+                        # We're passing an inline-defined vector
+                        arg = arg.variable
+                    matrix.modify_sp(i, -3)
+                else:
+                    matrix.modify_sp(i, -1)
+
+                args.append(arg)
 
             return_val = NSSSubCall(sub_name, args)
+            if subs[sub_name].retn_type == "void":
+                print("Not pushing void return to the stack")
+            elif subs[sub_name].retn_type == "vector":
+                raise Exception("Vector subprocesses are not currently implemented")
+            else:
+                matrix.propagate(return_val, ObjectType.INV_NAME_MAP[subs[sub_name].retn_type], i, matrix.top_of_stack(i) - 1)
+                # matrix.modify_sp(i, 1)
 
         elif type(command) is asm.SSJumpSubroutine:
             sub_name = command.line.replace("_", "")
             assert sub_name in subs, "Could not find subroutine {}".format(sub_name)
 
             called_sub = subs[sub_name]
+
             modifier = called_sub.num_args
 
-            print("Sub {} has {} args".format(sub_name, called_sub.num_args))
-            # exit()
-
             args = []
-            arg_types = []
-            for pops in range(modifier):
-                args.append(matrix.value_from_offset(i, -4))
-                arg_types.append(matrix.type_from_offset(i, -4))
-                matrix.modify_sp(i, -1)
 
-            called_sub.arg_types = arg_types
+            for pops in range(modifier):
+                arg = matrix.value_from_offset(i, -4)
+                arg_type = matrix.type_from_offset(i, -4)
+                if "active" in dir(arg):
+                    arg.active = False
+                    arg = copy_obj(arg)
+                    arg.active = True
+
+                if arg_type is ObjectType.VECTOR:
+                    if type(arg) is NSSReference:
+                        # We're already passing a variable through, so just leave it be
+                        pass
+                    else:
+                        # We're passing an inline-defined vector
+                        arg = arg.variable
+                    matrix.modify_sp(i, -3)
+                else:
+                    matrix.modify_sp(i, -1)
+
+                args.append(arg)
 
             return_val = NSSSubCall(sub_name, args)
             matrix.propagate(return_val, None, i, matrix.top_of_stack(i))
@@ -839,6 +899,13 @@ def analyze_block(block, sub, subs, global_data, matrix):
         elif type(command) is asm.NoOp:
             return_val = None
 
+        elif type(command) is asm.Return:
+            if subs[sub.name].retn_type != "void":
+                # Return the top of the stack
+                value = matrix.value_from_offset(i, -4)
+                return_val = NSSReturnValue(value)
+            else:
+                return_val = command
         # Some other operation that doesn't affect the stack
         else:
             return_val = command

@@ -1,10 +1,9 @@
-int sub();
+int sub(int a, int b, int c);
 
 void main () {
-    sub();
-    int x = sub();
+    int x = sub(0, 1, 2);
 }
 
-int sub () {
+int sub (int a, int b, int c) {
     return 42;
 }
