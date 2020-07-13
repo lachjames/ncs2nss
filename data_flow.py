@@ -1,17 +1,19 @@
 from data_flow_types import Variable, BinaryOperation, UnaryOperation, LogicalOperation, NSSGlobal, NSSArgumentAccess, NSSAssign, NSSCreateLocal, NSSAction, \
     NSSSSAction, \
     NSSReference, \
-    NSSSubCall, NSSVector, NSSReturnValue
+    NSSSubCall, NSSVector, NSSReturnValue, VectorDefinition, VectorView
 
 import control_flow
 import assembly as asm
-from util import PropagateTable, PropagateVector
+from data_structures.stack import StackMatrix
 
 import copy
 import idioms
 from nwscript import NWScript
 
 from colorama import init, Fore
+
+from data_flow_analysis import DFA_CONVERSIONS
 
 init()
 
@@ -28,14 +30,6 @@ def main():
     pass
 
 
-class HTMLColors:
-    GREEN = "#AFC97E"
-    BLUE = "#5398BE"
-    RED = "#F24236"
-    DARKBLUE = "#BCE7FD"
-    BLACK = "#2E282A"
-
-
 # m = StackMatrix(num_commands=10, stack_size=5)
 # print(m)
 
@@ -46,76 +40,28 @@ def df_analysis(subroutine, subroutines, global_data):
     with open("html/{}.html".format(subroutine.name), "w") as f:
         f.write(matrix.html())
 
+    # print(matrix.var_names)
+    # print(matrix.types)
+
+    # print()
+    # print("Blocks:")
+    # for block in blocks:
+    #     print(block)
+    # print()
+
     # Replace all inactive blocks with None
     for i in range(len(blocks)):
         if "active" in dir(blocks[i]) and not blocks[i].active:
             blocks[i] = None
 
-    defined = set()
+    assignment_dict = matrix.match_assignments(subroutine, subroutines, global_data)
 
-    for i in range(0, matrix.num_commands - 1):
-        # We want to check for variables only when space is put on the stack
-        if (i == 0 and matrix.sps[0] == 0) or matrix.sps[i] <= matrix.sps[i - 1]:
-            # Either this is the first instruction (with no stack push)
-            # or the stack size did not increase here
-            continue
+    for var_name in assignment_dict:
+        var_type, declared_pos = assignment_dict[var_name]
 
-        # print(matrix.sps[i+1])
-
-        # print("Checking block {}".format(i))
-
-        pos = matrix.top_of_stack(i) - 1
-
-        for j in range(i + 1, matrix.num_commands):
-            if matrix.sps[j] <= pos:
-                print("{} (from {}) was pushed off the stack in {}".format(pos, i, j))
-                # Variable was pushed off the stack
-                break
-
-            if matrix.var_names[j, pos]:
-                if matrix.var_names[j, pos] in defined:
-                    break
-
-                if type(matrix.matrix[j, pos]) is NSSSSAction:
-                    continue
-
-                # Variable was assigned so it's a local
-                # Create a new block for the local variable's creation
-                if matrix.types[i, pos] is not None:
-                    var_type = ObjectType.NAME_MAP[matrix.types[i, pos]]
-                elif matrix.types[j, pos] is not None:
-                    var_type = ObjectType.NAME_MAP[matrix.types[j, pos]]
-                elif pos < 0:
-                    arg_types = subroutines[subroutine.name].arg_types
-                    if -pos <= len(arg_types):
-                        var_type = ObjectType.NAME_MAP[arg_types[-pos + 1]]
-                    else:
-                        assert global_data is not None
-                        # Get a global variable
-                        _, var_type = global_data.from_offset((-pos + 1 - len(arg_types)) * 4)
-                else:
-                    var_type = "unknown"
-                    print("Warning: failed type inference on cmd {} ({}), getting from pos {}".format(subroutine.commands[i], i, pos))
-                    print(matrix.matrix.get_frame(i))
-                    with open("html/dump.html", "w") as f:
-                        f.write(matrix.html())
-                    exit()
-                    # raise Exception("Failed to calculate type of block {} = {} with sp = {}".format(i, blocks[i], pos - 1))
-
-                blocks[i] = NSSCreateLocal(var_type, matrix.var_names[j, pos], blocks[i])
-
-                defined.add(matrix.var_names[j, pos])
-                # print("created: {}".format(blocks[i]))
-                break
-        else:
-            print("Failed to find usage of {} as a local variable".format(pos))
+        blocks[declared_pos] = NSSCreateLocal(var_type, var_name, blocks[declared_pos])
 
     reduce_idioms(blocks)
-
-    # for block in blocks:
-    #     print(block)
-
-    # We need to find any blocks which create a variable
 
     return blocks, matrix
 
@@ -218,135 +164,11 @@ class ObjectType:
         return 1
 
 
-class StackMatrix:
-    def __init__(self, num_commands, stack_size, sub):
-        self.num_commands = num_commands
-        self.stack_size = stack_size
-        self.sub = sub
-
-        self.matrix = PropagateTable(num_commands, stack_size)  # [[None for _ in range(stack_size)] for _ in range(num_commands)]
-        self.var_names = PropagateTable(num_commands, stack_size)  # [[None for _ in range(stack_size)] for _ in range(num_commands)]
-        self.types = PropagateTable(num_commands, stack_size)  # [[None for _ in range(stack_size)] for _ in range(num_commands)]
-
-        self.sps = PropagateVector(num_commands, default_value=0)  # [0 for _ in range(num_commands)]
-        self.bps = PropagateVector(num_commands, default_value=0)  # [0 for _ in range(num_commands)]
-
-        self.num_vars = 0
-
-        self.defines_local = [None for _ in range(num_commands)]
-
-    def __getitem__(self, pos):
-        return self.matrix[pos[0], pos[1]]
-
-    def __setitem__(self, pos, value):
-        self.matrix[pos[0], pos[1]] = value
-
-    def propagate(self, obj, obj_type, start_command, stack_pos):
-        # for cmd in range(start_command, self.num_commands):
-        self[start_command, stack_pos] = obj
-        self.types[start_command, stack_pos] = obj_type
-
-    def top_of_stack(self, i):
-        return self.sps[i]
-
-    def sp_offset_to_pos(self, i, offset):
-        return self.top_of_stack(i) + (offset // 4)
-
-    def value_from_offset(self, i, offset):
-        # pos = self.sp_offset_to_pos(i, offset)
-        # if pos < 0:
-        #     print("OFFSET {} -> {}".format(offset, pos))
-        #     pos = -pos - 1
-        #     return NSSArgumentAccess("arg" + str(pos))
-        # else:
-        return self.matrix[i, self.sp_offset_to_pos(i, offset)]
-
-    def type_from_offset(self, i, offset):
-        return self.types[i, self.sp_offset_to_pos(i, offset)]
-
-    def modify_sp(self, i, offset):
-        self.sps[i] = self.sps[i] + offset
-        # value = self.sps[i] + offset
-        # if value < 0:
-        #     # This should not be possible, so something's gone wrong
-        #     # print("INVALID STACK OPERATION DETECTED")
-        #     # print(self)
-        #     # raise Exception("Invalid stack operation detected; tried to set sps[{}] to {} (offset {})".format(i, value, offset))
-        #     pass
-        # self.sps[i] = value
-        # for j in range(i, self.num_commands):
-        #     self.sps[j] = value
-
-    def set_local(self, i, pos):
-        has_set = False
-        for j in range(i, self.num_commands):
-            if self.var_names[j, pos] is None:
-                if self.sub.name == "global":
-                    self.var_names[j, pos] = "GLOBAL_{}".format(self.num_vars)
-                else:
-                    self.var_names[j, pos] = "VAR_{}".format(self.num_vars)
-                has_set = True
-        if has_set:
-            self.num_vars += 1
-
-    def html(self):
-        preamble = """
-        <style>
-        table, th, td {
-            border: 1px dotted grey;
-        }
-        body {
-            background-color:black;
-        }
-        </style>
-        """
-        string = [preamble, "<table style=\"color:white\">"]
-
-        # Header row
-        string.append("<tr><td></td>")
-        for i in range(self.num_commands):
-            string.append("<th>" + str(i) + "</th>")
-        string.append("</tr>")
-
-        for stack_pos in range(self.stack_size):
-            string.append("<tr><td><b>" + str(stack_pos) + "</b></td>")
-            changed = False
-            for cmd in range(self.num_commands):
-                if stack_pos >= self.top_of_stack(cmd):
-                    col = HTMLColors.RED
-                else:
-                    col = HTMLColors.GREEN
-                string.append("<td style=\"color:{}\">".format(col))
-                item = self.matrix[cmd, stack_pos]
-                if item is None:
-                    string.append("--")
-                else:
-                    changed = True
-                    val = str(item)
-                    if len(val) > 13:
-                        val = val[:10] + "..."
-                    string.append(val)
-                string.append("</td>")
-
-            string.append("</tr>")
-            if not changed:
-                break
-
-        string.append("<tr style=\"color:{}\">".format(HTMLColors.DARKBLUE) + "<td>SP</td>")
-        for idx in range(self.num_commands):
-            string.append("<td>" + str(self.sps[idx]) + "</td>")
-        string.append("</tr>")
-
-        string.append("<tr style=\"color:{}\">".format(HTMLColors.DARKBLUE) + "<td>BP</td>")
-        for idx in range(self.num_commands):
-            string.append("<td>" + str(self.bps[idx]) + "</td>")
-        string.append("</tr>")
-
-        string.append("</table>")
-        return "".join(string)
-
-
 def analyze_blocks(sub, subs, global_data):
+    if sub.name == "main":
+        with open("html/running.html", "w") as f:
+            pass
+
     cfa = control_flow.ControlFlowAnalysis(sub, True)
     cfg = cfa.cfg
 
@@ -356,511 +178,57 @@ def analyze_blocks(sub, subs, global_data):
 
     # Do a depth-first traversal of the cfg, analyzing each block as we go
     done = set()
-    stack = [cfg.header]
+    stack = [(cfg.header, None, None)]
     while len(stack) > 0:
-        stack.sort(key=lambda x: -x.address)
-        block = stack.pop()
+        block, last_frame, sp = stack.pop()
 
         if block in done:
             continue
 
-        new_blocks = analyze_block(block, sub, subs, global_data, matrix)
+        if last_frame is not None:
+            matrix.matrix.set_frame(block.address, last_frame)
+            matrix.sps[block.address] = sp
+
+        try:
+            new_blocks = analyze_block(block, sub, subs, global_data, matrix)
+        except Exception as e:
+            print("Error in block {}".format(block))
+            with open("html/dump.html", "w") as f:
+                f.write(matrix.html())
+            raise e
 
         blocks[block.address:block.address + block.length] = new_blocks
+
+        last_frame = copy.deepcopy(matrix.matrix.get_frame(block.address + block.length - 1))
         for succ in block.succs:
-            matrix.sps[succ.address] = matrix.sps[block.address + block.length - 1]
-            stack.append(succ)
+            stack.append(
+                (succ, last_frame, matrix.sps[block.address + block.length - 1])
+            )
 
         done.add(block)
+
+        if sub.name == "main":
+            with open("html/running.html", "a") as f:
+                f.write("<h3 style=\"color:White\">{}</h3>".format(block))
+                f.write(matrix.html())
 
     return blocks, matrix
 
 
 def analyze_block(block, sub, subs, global_data, matrix):
-    stack_size = 0
-    # for cmd in sub.commands:
-    #     if type(cmd) in (asm.RSAdd, asm.Const, asm.CPTopSP, asm.CPTopBP):  # , asm.MoveSP):
-    #         stack_size += 1
-
-    # N = len(sub.commands)
-    # matrix = StackMatrix(N, stack_size, sub)
-    # matrix = StackMatrix(N, N, sub)
-
-    # print("*** START ***")
-    # print(matrix)
-
     blocks = []
     commands = sub.commands[block.address:block.address + block.length]
     for i_raw, command in enumerate(commands):
         i = block.address + i_raw
-        return_val = None
-        # print("Command {}: {}".format(i, command))
-        if type(command) is asm.RSAdd:
-            # Reserve space on the stack
-            var_type = ObjectType.MAP[command.op_type[-1].lower()]
-            if var_type in ObjectType.DEFAULT_MAP:
-                var_obj = Variable(var_type, ObjectType.DEFAULT_MAP[var_type], is_set=False)
-            else:
-                var_obj = Variable(var_type, None, is_set=False)
 
-            matrix.propagate(var_obj, var_type, i, matrix.top_of_stack(i))
-            matrix.modify_sp(i, ObjectType.size(var_type))
-
-        elif type(command) is asm.Const:
-            const_type = ObjectType.MAP[command.const_type[-1].lower()]
-            value = command.value
-            const_obj = Variable(const_type, value)
-
-            matrix.propagate(const_obj, const_type, i, matrix.top_of_stack(i))
-            matrix.modify_sp(i, ObjectType.size(const_type))
-
-        # Stack pointer changes
-        elif type(command) is asm.CPTopSP:
-            # Add the given number of bytes from the location specified in the stack to the top of the stack.
-            # The value of SP is increased by the number of copied bytes.
-            stack_pos = matrix.sp_offset_to_pos(i, command.a)
-            if stack_pos < 0:
-                # We are copying either an argument or a global
-                arg_ref = -stack_pos - 1
-                # print("Referencing {} with {} args".format(arg_ref, subs[sub.name].num_args))
-                if arg_ref < subs[sub.name].num_args:
-                    reference = NSSArgumentAccess("arg" + str(-stack_pos - 1))
-                    # TODO: Find the actual type
-                    reference_type = ObjectType.INT
-                else:
-                    global_name, global_type = global_data.from_offset(command.a + 4 * subs[sub.name].num_args)
-                    reference = NSSGlobal(global_name)
-                    reference_type = global_type
-
-                    # print("Name: {}; Type: {}".format(global_name, global_type))
-            else:
-                value = matrix.value_from_offset(i, command.a)
-                if type(value) is NSSSSAction:
-                    # Technically, the NSSSAction is not really "pushed" onto the stack;
-                    # we just are overloading the use of the stack so we can push an "Action"
-                    # onto the stack rather than executing it like normal
-                    reference = matrix.value_from_offset(i, command.a - 4)
-                    reference_type = matrix.types[i, stack_pos]
-
-                elif type(value) is NSSSubCall:
-                    reference = value
-                    reference_type = matrix.types[i, stack_pos]
-
-                elif type(value) in (NSSReference, NSSArgumentAccess, NSSGlobal):
-                    reference = value
-                    reference_type = matrix.types[i, stack_pos]
-
-                elif type(value) is Variable and not value.is_set:
-                    # assert value.value is not None, "Don't know default value of type {}".format(value.var_type)
-                    reference = value
-                    reference_type = matrix.types[i, stack_pos]
-
-                else:
-                    reference = NSSReference(matrix.var_names[i, stack_pos])
-                    reference_type = matrix.types[i, stack_pos]
-
-                # matrix.set_local(i, stack_pos)
-
-            matrix.propagate(reference, reference_type, i, matrix.top_of_stack(i))
-            matrix.modify_sp(i, ObjectType.size(reference_type))
-
-        elif type(command) is asm.CPDownSP:
-            # Copy the given number of bytes from the top of the stack down to the location specified.
-            # The value of SP remains unchanged.
-            # print("CPDownSP from {} to {}".format(new_stack_state.sp))
-            value = matrix.value_from_offset(i, -4)
-            value_type = matrix.type_from_offset(i, -4)
-            if "active" in dir(value):
-                value.active = False
-                value = copy_obj(value)
-                value.active = True
-
-            stack_pos = matrix.sp_offset_to_pos(i, command.a)
-            # print("Copying {} to {}".format(value, stack_pos))
-
-            matrix.propagate(value, value_type, i, stack_pos)
-            matrix.set_local(i, stack_pos)
-
-            return_val = NSSAssign(matrix.var_names[i, matrix.sp_offset_to_pos(i, command.a)], matrix.value_from_offset(i, command.a))
-
-        # Base pointer changes
-        elif type(command) is asm.CPTopBP:
-            # Add the given number of bytes from the location specified in the stack to the top of the stack.
-            # The value of SP is increased by the number of copied bytes.
-
-            # We are getting a global variable's value
-            # global_type, global_name = subs["global"].get_global(command.a)
-            global_name, global_type = global_data.from_offset(command.a)
-
-            reference = NSSGlobal(global_name)
-            reference_type = global_type
-
-            matrix.propagate(reference, reference_type, i, matrix.top_of_stack(i))
-            matrix.modify_sp(i, ObjectType.size(reference_type))
-
-        elif type(command) is asm.CPDownBP:
-            # Copy the given number of bytes from the base pointer down to the location specified.
-            # This instruction is used to assign new values to global variables.
-            # The value of SP remains unchanged.
-
-            dest = command.a
-            num_items = command.b // 4
-
-            if num_items == 3:
-                # This is a vector
-                raise Exception("Vector BP operations not yet implmemented")
-            elif num_items == 1:
-                copy_from = matrix.value_from_offset(i, -4)
-            else:
-                raise Exception("Trying to copy {} bytes with CPDownBP".format(command.b))
-
-            global_name, global_type = global_data.from_offset(dest)
-
-            reference = NSSGlobal(global_name)
-
-            return_val = NSSAssign(reference, copy_from)
-            # pass
-            # raise NotImplementedError("BP operations not yet implemented")
-            # Copy the given number of bytes from the base pointer down to the location specified. This instruction is used to assign new values to global variables.
-            # The value of SP remains unchanged.
-            # value = new_stack_state[new_stack_state.sp].value
-            #
-            # new_stack_state[(new_stack_state.bp + command.a)].value = value
-            # new_stack_state.set_local((new_stack_state.bp + command.a))
-            #
-            # return_val = NSSAssign(new_stack_state[(new_stack_state.bp + command.a)])
-
-        # Unary stack operations
-        elif type(command) is asm.UnaryOp:
-            pos = matrix.sp_offset_to_pos(i, -4)
-            value = matrix.value_from_offset(i, -4)
-            value_type = matrix.type_from_offset(i, -4)
-            if "active" in dir(value):
-                value.active = False
-                value = copy_obj(value)
-                value.active = True
-
-            matrix.propagate(UnaryOperation(value, asm_to_nss(command.op_type)), value_type, i, pos)
-
-        # Logical stack operations
-        elif type(command) is asm.Logical:
-            pos = matrix.sp_offset_to_pos(i, -8)
-            arg2 = matrix.value_from_offset(i, -4)
-            arg1 = matrix.value_from_offset(i, -8)
-
-            if "active" in dir(arg2):
-                arg2.active = False
-                arg2 = copy_obj(arg2)
-                arg2.active = True
-            if "active" in dir(arg1):
-                arg1.active = False
-                arg1 = copy_obj(arg1)
-                arg1.active = True
-
-            value_type = matrix.type_from_offset(i, -4)
-
-            matrix.propagate(LogicalOperation(arg1, asm_to_nss(command.op_type), arg2), value_type, i, pos)
-            matrix.modify_sp(i, -1)
-
-        # Binary stack operations
-        elif type(command) is asm.BinaryOp:
-            pos = matrix.sp_offset_to_pos(i, -8)
-            arg2 = matrix.value_from_offset(i, -4)
-            arg1 = matrix.value_from_offset(i, -8)
-
-            popped_size = ObjectType.size(matrix.type_from_offset(i, -4)) + ObjectType.size(matrix.type_from_offset(i, -8))
-
-            if "active" in dir(arg2):
-                arg2.active = False
-                arg2 = copy_obj(arg2)
-                arg2.active = True
-
-            if "active" in dir(arg1):
-                arg1.active = False
-                arg1 = copy_obj(arg1)
-                arg1.active = True
-
-            if {matrix.type_from_offset(i, -4), matrix.type_from_offset(i, -8)} == {ObjectType.VECTOR, ObjectType.FLOAT}:
-                value_type = ObjectType.VECTOR
-                # value_type = ObjectType.FLOAT
-            else:
-                value_type = matrix.type_from_offset(i, -4)
-
-            matrix.propagate(BinaryOperation(arg1, asm_to_nss(command.op_type), arg2), value_type, i, pos)
-            pushed_size = ObjectType.size(value_type)
-            matrix.modify_sp(i, -1 * popped_size + pushed_size)
-
-        elif type(command) is asm.MoveSP:
-            matrix.modify_sp(i, command.x // 4)
-
-        elif type(command) is asm.Destruct:
-            destruct_size = command.a
-            save_start = command.b
-            save_length = command.c
-
-            saved_items = []
-
-            while save_length > 0:
-                offset = (save_start - save_length) - 4
-                # print("Saving item from offset {}".format(offset))
-                saved_items.append(
-                    (matrix.value_from_offset(i, offset), matrix.type_from_offset(i, offset))
-                )
-                save_length -= 4
-
-            # print("Saved {} item(s): {}".format(len(saved_items), saved_items))
-            #
-            # print("Taking {} items off stack".format(destruct_size // 4))
-
-            matrix.modify_sp(i, -destruct_size // 4)
-
-            # print("Putting {} items on stack".format(len(saved_items)))
-
-            while len(saved_items) > 0:
-                item, item_type = saved_items.pop()
-                pos = matrix.top_of_stack(i)
-                matrix.propagate(item, item_type, i, pos)
-                matrix.modify_sp(i, 1)
-
-            # print("Destruct on line {}".format(i))
-            # with open("output.html", "w") as f:
-            #     f.write(matrix.html())
-            # exit()
-
-        elif type(command) is asm.StackOp:
-            # These just increment/decrement variables relative
-            # to either the stack of base pointer.
-            # sp_val = new_stack_state.sp_offset_to_pos(command.value)
-            # bp_val = new_stack_state.bp + command.value
-
-            if command.op_type == "DECSPI":
-                # Decrease a variable relative to the stack pointer
-                pos = matrix.sp_offset_to_pos(i, command.value)
-                var_type = matrix.type_from_offset(i, command.value)
-                # value = matrix.value_from_offset(i, command.value)
-                var = matrix.var_names[i, pos]
-
-                op = UnaryOperation(var, "--")
-
-                matrix.propagate(op, var_type, i, pos)
-
-                return_val = op
-
-                # return_val = NSSAssign(matrix.var_names[i, matrix.sp_offset_to_pos(i, command.value)], value)
-
-            elif command.op_type == "INCSPI":
-                pos = matrix.sp_offset_to_pos(i, command.value)
-                var_type = matrix.type_from_offset(i, command.value)
-                # value = matrix.value_from_offset(i, command.value)
-                var = matrix.var_names[i, pos]
-
-                op = UnaryOperation(var, "++")
-
-                matrix.propagate(op, var_type, i, pos)
-                return_val = op
-
-            elif command.op_type == "DECBPI":
-                # Decrease a variable relative to the stack pointer
-                global_name, global_type = global_data.from_offset(command.value)
-                global_ref = NSSGlobal(global_name)
-
-                return_val = UnaryOperation(global_ref, "--")
-
-            elif command.op_type == "INCBPI":
-                global_name, global_type = global_data.from_offset(command.value)
-                global_ref = NSSGlobal(global_name)
-
-                return_val = UnaryOperation(global_ref, "++")
-
-
-        elif type(command) is asm.JumpSubroutine:
-            sub_name = command.line.replace("_", "")
-            assert sub_name in subs, "Could not find subroutine {}".format(sub_name)
-
-            called_sub = subs[sub_name]
-            modifier = called_sub.num_args
-            # print("Calling sub {} with {} args and retn value {}".format(sub_name, modifier, called_sub.retn_type))
-
-            args = []
-
-            for pops in range(modifier):
-                arg = matrix.value_from_offset(i, -4)
-                arg_type = matrix.type_from_offset(i, -4)
-                if "active" in dir(arg):
-                    arg.active = False
-                    arg = copy_obj(arg)
-                    arg.active = True
-
-                if arg_type is ObjectType.VECTOR:
-                    if type(arg) is NSSReference:
-                        # We're already passing a variable through, so just leave it be
-                        pass
-                    else:
-                        # We're passing an inline-defined vector
-                        arg = arg.variable
-                    matrix.modify_sp(i, -3)
-                else:
-                    matrix.modify_sp(i, -1)
-
-                args.append(arg)
-
-            return_val = NSSSubCall(sub_name, args)
-            if subs[sub_name].retn_type == "void":
-                # print("Not pushing void return to the stack")
-                pass
-            elif subs[sub_name].retn_type == "vector":
-                raise Exception("Vector subprocesses are not currently implemented")
-            else:
-                matrix.propagate(return_val, ObjectType.INV_NAME_MAP[subs[sub_name].retn_type], i, matrix.top_of_stack(i) - 1)
-                # matrix.modify_sp(i, 1)
-
-        elif type(command) is asm.SSJumpSubroutine:
-            sub_name = command.line.replace("_", "")
-            assert sub_name in subs, "Could not find subroutine {}".format(sub_name)
-
-            called_sub = subs[sub_name]
-
-            modifier = called_sub.num_args
-
-            args = []
-
-            for pops in range(modifier):
-                arg = matrix.value_from_offset(i, -4)
-                arg_type = matrix.type_from_offset(i, -4)
-                if "active" in dir(arg):
-                    arg.active = False
-                    arg = copy_obj(arg)
-                    arg.active = True
-
-                if arg_type is ObjectType.VECTOR:
-                    if type(arg) is NSSReference:
-                        # We're already passing a variable through, so just leave it be
-                        pass
-                    else:
-                        # We're passing an inline-defined vector
-                        arg = arg.variable
-                    matrix.modify_sp(i, -3)
-                else:
-                    matrix.modify_sp(i, -1)
-
-                args.append(arg)
-
-            return_val = NSSSubCall(sub_name, args)
-            matrix.propagate(return_val, None, i, matrix.top_of_stack(i))
-            matrix.modify_sp(i, 1)
-
-
-        elif type(command) is asm.ConditionalJump:
-            value = matrix.value_from_offset(i, -4)
-            if "active" in dir(value):
-                value.active = False
-                value = copy_obj(value)
-                value.active = True
-
-            command.conditional = value
-            # print("Conditional jump has condition {} is not zero".format(command.conditional))
-            matrix.modify_sp(i, -1)
-            return_val = command
-
-        elif type(command) is asm.Action:
-            func = NWSCRIPT.functions[command.label]
-            modifier = len(func.func_args)
-
-            args = []
-
-            for pops in range(modifier):
-                arg = matrix.value_from_offset(i, -4)
-                arg_type = matrix.type_from_offset(i, -4)
-                if "active" in dir(arg):
-                    arg.active = False
-                    arg = copy_obj(arg)
-                    arg.active = True
-
-                if arg_type is ObjectType.VECTOR:
-                    if type(arg) is NSSReference:
-                        # We're already passing a variable through, so just leave it be
-                        pass
-                    else:
-                        # We're passing an inline-defined vector
-                        arg = arg.variable
-                    matrix.modify_sp(i, -3)
-                else:
-                    matrix.modify_sp(i, -1)
-
-                args.append(arg)
-
-            return_val = NSSAction(func.func_name, args)
-            # Pop arguments from the stack
-            if func.func_type != "void":
-                # Push the return value to the stack
-                if func.func_type == "vector":
-                    vector = NSSVector(return_val)
-                    return_val = None
-
-                    matrix.propagate(vector.ref("x"), ObjectType.INV_NAME_MAP[func.func_type], i, matrix.top_of_stack(i))
-                    matrix.modify_sp(i, 1)
-                    matrix.propagate(vector.ref("y"), ObjectType.INV_NAME_MAP[func.func_type], i, matrix.top_of_stack(i))
-                    matrix.modify_sp(i, 1)
-                    matrix.propagate(vector.ref("z"), ObjectType.INV_NAME_MAP[func.func_type], i, matrix.top_of_stack(i))
-                    matrix.modify_sp(i, 1)
-
-                    # print("Vector function on line {}".format(i))
-                    # with open("output.html", "w") as f:
-                    #     f.write(matrix.html())
-                    # exit()
-                else:
-                    matrix.propagate(return_val, ObjectType.INV_NAME_MAP[func.func_type], i, matrix.top_of_stack(i))
-                    matrix.modify_sp(i, 1)
-
-        elif type(command) is asm.SSAction:
-            func = NWSCRIPT.functions[command.label]
-            modifier = len(func.func_args)
-
-            args = []
-
-            for pops in range(modifier):
-                arg = matrix.value_from_offset(i, -4)
-                arg_type = matrix.type_from_offset(i, -4)
-                if "active" in dir(arg):
-                    arg.active = False
-                    arg = copy_obj(arg)
-                    arg.active = True
-
-                if arg_type is ObjectType.VECTOR:
-                    if type(arg) is NSSReference:
-                        # We're already passing a variable through, so just leave it be
-                        pass
-                    else:
-                        # We're passing an inline-defined vector
-                        arg = arg.variable
-                    matrix.modify_sp(i, -3)
-                else:
-                    matrix.modify_sp(i, -1)
-
-                args.append(arg)
-
-            # Pop arguments from the stack
-            return_val = NSSSSAction(func.func_name, args)
-
-            # Push the SSAction to the stack
-            matrix.propagate(return_val, None, i, matrix.top_of_stack(i))
-            matrix.modify_sp(i, 1)
-
-        elif type(command) is asm.NoOp:
-            return_val = None
-
-        elif type(command) is asm.Return:
-            if subs[sub.name].retn_type != "void":
-                # Return the top of the stack
-                value = matrix.value_from_offset(i, -4)
-                return_val = NSSReturnValue(value)
-            else:
-                return_val = command
-        # Some other operation that doesn't affect the stack
+        if type(command) in DFA_CONVERSIONS:
+            val = DFA_CONVERSIONS[type(command)](
+                i, command, sub, subs, global_data, matrix
+            )
         else:
-            return_val = command
+            val = command
 
-        blocks.append(return_val)
+        blocks.append(val)
 
     return blocks
 

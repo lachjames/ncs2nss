@@ -8,6 +8,8 @@ void main () {
         int z = 0;
         object a;
         vector v = [0.0, 0.0, 0.0];
+        vector u = [1.0, 1.0, 1.0];
+        vector r = v + u;
     }
     PrintInteger(y);
 }

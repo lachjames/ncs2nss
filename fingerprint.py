@@ -9,7 +9,7 @@ import rply
 import tqdm
 import pickle
 
-from data_flow import ObjectType
+# from data_flow import ObjectType
 
 
 def main():

@@ -4,7 +4,7 @@ import assembly as asm
 import time
 import pydot
 
-from util import OrderedSet
+from data_structures.util import OrderedSet
 
 
 class ControlFlowAnalysis:
@@ -49,9 +49,9 @@ class ControlFlowAnalysis:
 
         self.steps = [self.cfg]
 
-        print("Calculating DS step", 0)
+        ## print("Calculating DS step", 0)
         for i, step in enumerate(self.derived_sequence()):
-            print("Calculated DS step", i)
+            ## print("Calculated DS step", i)
             self.steps.append(step)
             step.draw("graphs/{}_step_{}.png".format(subroutine.name, i))
 
@@ -78,7 +78,7 @@ class ControlFlowAnalysis:
                 node_to_interval[node] = interval
 
         if len(intervals) == 1:
-            print("Only found one interval, so returning")
+            ## print("Only found one interval, so returning")
             return new_G, False
 
         changed = False
@@ -378,10 +378,10 @@ class Interval:
         if self.is_loop():
             self.structure_loop()
             # assert self.loop is not None, "self.loop not set to a loop"
-            print("Found loop")
+            ## print("Found loop")
             # print("Found loop of type", self.loop.loop_type())
-        else:
-            print("Did not find a loop")
+        # else:
+            # print("Did not find a loop")
 
         # self.structure_ncond()
 
@@ -405,7 +405,7 @@ class Interval:
             for succ in node.succs:
                 if succ is other.header_bb():
                     found.add(node)
-                print("Found connection between {} and {}".format(node, succ))
+                # print("Found connection between {} and {}".format(node, succ))
         return found
 
     def back_nodes(self):
@@ -424,7 +424,7 @@ class Interval:
             # else:
             #     print("Pred node {} is not in {}".format(pred, self.nodes))
 
-        print("Found {} back nodes from {} to {}".format(len(nodes), nodes, self.header_bb()))
+        # print("Found {} back nodes from {} to {}".format(len(nodes), nodes, self.header_bb()))
 
         return list(nodes)
 
@@ -457,7 +457,7 @@ class Interval:
         # print("Loop with header {} has back nodes {}".format(self.header, [str(x) for x in back_nodes]))
         # assert len(back_nodes) == 1, "len(back_nodes) should be 1 but is {}".format(len(back_nodes))
 
-        print("back nodes: {}".format(back_nodes))
+        # print("back nodes: {}".format(back_nodes))
 
         back_nodes = list(sorted(back_nodes, key=lambda b: b.rev_postorder))
         back_node = back_nodes[-1]
@@ -467,10 +467,10 @@ class Interval:
         for obn in other_back_nodes:
             obn.params["continue"] = True
 
-        print("Found last back node {}".format(back_node))
+        # print("Found last back node {}".format(back_node))
 
         raw_loop_nodes = list(self.loop_nodes(back_node))
-        print("Found raw loop nodes {}".format(raw_loop_nodes))
+        # print("Found raw loop nodes {}".format(raw_loop_nodes))
         loop_nodes = []
 
         while len(raw_loop_nodes) > 0:
@@ -479,15 +479,15 @@ class Interval:
                 raw_loop_nodes += list(node.interval_bbs())
             elif node is back_node or back_node not in node.dominators:
                 loop_nodes.append(node)
-            else:
-                print("Node {} not in loop as it's dominated by the back node".format(node))
+            # else:
+                # print("Node {} not in loop as it's dominated by the back node".format(node))
         loop = Loop(back_node, None, loop_nodes, self.header)
 
-        print("Loop {} contains {}".format(loop, loop_nodes))
+        # print("Loop {} contains {}".format(loop, loop_nodes))
         loop_type = loop.loop_type()
 
         if loop_type is LoopType.PRETESTED:
-            self.header.params["no_if"] = True
+            # self.header.params["no_if"] = True
             header_succs = list(self.header.succs)
             if header_succs[0] in loop_nodes:
                 loop_follow = header_succs[1]
@@ -500,7 +500,7 @@ class Interval:
             back_succs = list(back_node.succs)
             if len(back_succs) == 1 and len(back_node.preds) == 1:
                 real_back_node = list(back_node.preds)[0]
-                real_back_node.params["no_if"] = True
+                # real_back_node.params["no_if"] = True
                 real_back_node.params["no_follow"] = True
                 back_succs = list(real_back_node.succs)
             else:
@@ -583,12 +583,13 @@ class ControlFlowGraph:
                 node = node.header_bb()
 
             if "no_if" in node.params:
+                ## print("Skipping node {} because it has no_if set".format(node))
                 continue
 
             # if "back_node" in node.params:
             #     continue
 
-            print("Found an if node: {}".format(node))
+            ## print("Found an if node: {}".format(node))
 
             # If we reach this point, this is an if node
             node_dominates = OrderedSet()
@@ -602,13 +603,13 @@ class ControlFlowGraph:
                     node_dominates.add(other)
 
             if len(node_dominates) == 0:
-                print("Node {} is unresolved".format(node))
+                ## print("Node {} is unresolved".format(node))
                 unresolved.add(node)
                 continue
 
             follow_node = max(node_dominates, key=lambda x: x.rev_postorder)
             for un in unresolved:
-                print("Resolving {} by setting follow to {}".format(un, follow_node))
+                ## print("Resolving {} by setting follow to {}".format(un, follow_node))
                 # self.ifs.append(IfStatement(follow_node, [un], un))
                 if_statement = IfStatement(follow_node, [un], un)
                 un.params["if"] = if_statement
@@ -618,11 +619,13 @@ class ControlFlowGraph:
 
             if_statement = IfStatement(follow_node, [node], node)
             # self.ifs.append(if_statement)
-            print("Found if statement")
+            ## print("Created if statement with header {} and follow {}".format(node, follow_node))
 
             node.params["if"] = if_statement
 
-        # assert len(unresolved) == 0, "Found unresolved nodes {}".format(unresolved)
+        # assert len(unresolved) == 0, "Found {} unresolved nodes: {}".format(len(unresolved), [(str(x), type(x)) for x in unresolved])
+        if len(unresolved) > 0:
+            print("Warning: unresolved if statements found {}".format([str(x) for x in unresolved]))
 
     def structure_switch(self):
         for node in reversed(self.rev_dfs_order()):
@@ -638,7 +641,7 @@ class ControlFlowGraph:
             for s in case_head.succs:
                 self.case_nodes(case_nodes, case_head, end_node, s)
 
-            print("Found switch statement")
+            ## print("Found switch statement")
             node.params["switch"] = SwitchStatement(end_node, case_nodes, case_head)
             exit()
 
@@ -667,24 +670,24 @@ class ControlFlowGraph:
                     a, b = t.compute_conditional(self)
                     if a is e:
                         # not n or t
-                        print("Condition is !{} || {}".format(node, t))
+                        ## print("Condition is !{} && {}".format(node, t))
                         node.clear_conditional()
                         change = True
                     elif b is e:
                         # n or t
-                        print("Condition is {} || {}".format(node, t))
+                        ## print("Condition is {} || {}".format(node, t))
                         node.clear_conditional()
                         change = True
                 elif e is not None and "if" in e.params and len(e.preds) == 1:
                     a, b = e.compute_conditional(self)
                     if a is t:
                         # n or e
-                        print("Condition is {} || {}".format(node, e))
+                        ## print("Condition is {} && {}".format(node, e))
                         node.clear_conditional()
                         change = True
                     elif b is t:
                         # not n or e
-                        print("Condition is !{} || {}".format(node, e))
+                        ## print("Condition is !{} || {}".format(node, e))
                         node.clear_conditional()
                         change = True
 
@@ -715,7 +718,7 @@ class ControlFlowGraph:
 
     def dfs_between(self, a, b):
         between = self.rev_dfs_order()[a.rev_postorder:b.rev_postorder + 1]
-        print("From {} to {} is {}".format(a, b, between))
+        ## print("From {} to {} is {}".format(a, b, between))
         return between
 
     def nx_graph(self):
@@ -792,9 +795,29 @@ class ControlFlowGraph:
 
         self.structure_if()
         # self.structure_switch()
-        self.structure_comp_conds()
+        # self.structure_comp_conds()
 
         return intervals
+
+    def bb_color(self, bb):
+        # Using this color palette
+        # https://www.schemecolor.com/rainbow-pastels-color-scheme.php
+        node_last = bb.last_command(self.sub)
+        if type(node_last) is asm.ConditionalJump:
+            if node_last.op_type.lower() == "jz":
+                col = "#c7ceea"
+            elif node_last.op_type.lower() == "jnz":
+                col = "#b5ead7"
+            else:
+                raise Exception("Invalid op type {} for conditional jump found while plotting graph".format(node_last.op_type))
+        elif len(bb.succs) == 0:
+            col = "#ff9aa2"
+        elif type(node_last) in (asm.SSJumpSubroutine, asm.SSAction):
+            col = "#e2f0cb"
+        else:
+            col = "white"
+
+        return col
 
     def simple_draw(self, loc):
         nx_graph = self.nx_graph()
@@ -803,25 +826,29 @@ class ControlFlowGraph:
 
         graph_to_pydot = {}
         for graph_node in nx_graph:
-            pydot_node = pydot.Node(str(graph_node))
+            pydot_node = pydot.Node(str(graph_node), fillcolor=self.bb_color(graph_node), style="filled")
             graph_to_pydot[graph_node] = pydot_node
             pydot_graph.add_node(pydot_node)
 
-        for graph_node in nx_graph:
-            for other_node in graph_node.succs:
-                pydot_edge = pydot.Edge(graph_to_pydot[graph_node], graph_to_pydot[other_node])
-                pydot_graph.add_edge(pydot_edge)
+        for block in nx_graph:
+            pydot_node = graph_to_pydot[block]
+            t, f = block.outward_edges(self.sub)
+            if t is not None:
+                pydot_t = graph_to_pydot[t]
+                pydot_t_edge = pydot.Edge(pydot_node, pydot_t, label="t" if f is not None else "")
+                pydot_graph.add_edge(pydot_t_edge)
+
+            if f is not None:
+                pydot_f = graph_to_pydot[f]
+                pydot_f_edge = pydot.Edge(pydot_node, pydot_f, label="f")
+                pydot_graph.add_edge(pydot_f_edge)
 
         pydot_graph.write_png(loc)
 
     def draw(self, loc):
-        print("Drawing graph {}".format(loc))
-        print("Blocks: ", self.blocks)
-        for block in self.blocks:
-            for succ in block.succs:
-                print("{} -> {}".format(block, succ))
+        ## print("Drawing graph {}".format(loc))
 
-        pydot_graph = pydot.Dot()
+        pydot_graph = pydot.Dot(rank="rl")
 
         intervals = self.intervals()
 
@@ -853,7 +880,9 @@ class ControlFlowGraph:
                     if node in intervals[cluster_id].interval_bbs():
                         # print("Adding node {}".format(node))
                         # Found the node in a subgraph
-                        pydot_node = pydot.Node(str(node))
+                        col = self.bb_color(node)
+
+                        pydot_node = pydot.Node(str(node), fillcolor=col, style="filled")
                         cluster.add_node(pydot_node)
                         pydot_nodes[node] = pydot_node
 
@@ -868,18 +897,21 @@ class ControlFlowGraph:
                 nodes = [node]
 
             for block in nodes:
-                for other in block.succs:
-                    print("Block: {}".format(block))
-                    print("Other: {}".format(other))
-                    pydot_node = pydot_nodes[block]
-                    pydot_other = pydot_nodes[other]
+                pydot_node = pydot_nodes[block]
+                t, f = block.outward_edges(self.sub)
+                if t is not None:
+                    pydot_t = pydot_nodes[t]
+                    pydot_t_edge = pydot.Edge(pydot_node, pydot_t, label="t" if f is not None else "")
+                    pydot_graph.add_edge(pydot_t_edge)
 
-                    pydot_edge = pydot.Edge(pydot_node, pydot_other)
-                    pydot_graph.add_edge(pydot_edge)
+                if f is not None:
+                    pydot_f = pydot_nodes[f]
+                    pydot_f_edge = pydot.Edge(pydot_node, pydot_f, label="f")
+                    pydot_graph.add_edge(pydot_f_edge)
 
             # print("Found {} intervals".format(len(intervals)))
 
-            print("Writing graph {}".format(loc))
+            ## print("Writing graph {}".format(loc))
             pydot_graph.write_png(loc, prog="dot")
 
 
@@ -939,7 +971,7 @@ class Loop(AST):
         self.back = back
         self.follow = follow
 
-        print("Loop from {} to {} contains {}".format(self.header, self.back, self.nodes))
+        ## print("Loop from {} to {} contains {}".format(self.header, self.back, self.nodes))
 
     def loop_type(self):
         back_succs = list(self.back.succs)
@@ -948,10 +980,10 @@ class Loop(AST):
         else:
             head_succs = list(self.header.succs)
 
-        print("Back succs: {}; Head succs: {}".format(back_succs, head_succs))
+        ## print("Back succs: {}; Head succs: {}".format(back_succs, head_succs))
 
         if len(back_succs) == 1 and len(self.back.preds) == 1:
-            print("Passing the buck back to the previous node as this is a one-way jump")
+            ## print("Passing the buck back to the previous node as this is a one-way jump")
             # We check the node before this one as that's the conditional node
             back_succs = list(self.back.preds)[0].succs
 
@@ -970,7 +1002,7 @@ class Loop(AST):
             if len(head_succs) == 2:
                 return LoopType.PRETESTED
             else:
-                print("Head_succ: {}, Back_succ: {}".format(head_succs, back_succs))
+                ## print("Head_succ: {}, Back_succ: {}".format(head_succs, back_succs))
                 return LoopType.ENDLESS
 
     def to_nss(self, sub):
@@ -1048,11 +1080,44 @@ class BasicBlock:
             code_lines.append(str(line))
         return ";\n".join(code_lines) + (";" if len(code_lines) > 0 else "")
 
+    def outward_edges(self, sub):
+        # Returns t, f where t is the block navigated to on a true condition
+        # and f is navigated to on a false condition
+        if len(self.succs) == 0:
+            return None, None
+
+        if len(self.succs) == 1:
+            return list(self.succs)[0], None
+
+        assert len(self.succs) == 2, "Too many successors found for {} with succs {}".format(self, self.succs)
+        a, b = list(self.succs)
+
+        bb_last = self.last_command(sub)
+
+        on_condition_true = sub.labels[bb_last.line]
+        if a.address == on_condition_true:
+            t = a
+            f = b
+        elif b.address == on_condition_true:
+            t = b
+            f = a
+        else:
+            raise Exception("Could not find successor with address {}".format(on_condition_true))
+
+        if bb_last.op_type.lower() == "jz":
+            t, f = f, t
+        elif bb_last.op_type.lower() == "jnz":
+            pass
+        else:
+            raise Exception("Invalid bb op type {} found".format(bb_last.op_type))
+
+        return t, f
+
     def compute_conditional(self, cfa):
         if_data = self.params["if"]
         # Returns if_part, else_part
         non_follow = [x for x in self.succs if x is not if_data.follow]
-        print("Non follow nodes: {}".format(non_follow))
+        ## print("Non follow nodes: {}".format(non_follow))
         # assert len(non_follow) == 2, "Found {} non_follow, should be 2".format(non_follow)
         if len(non_follow) == 2:
             if non_follow[0].address == self.address + self.length:
@@ -1077,6 +1142,9 @@ class BasicBlock:
             raise Exception("Invalid bb op type {} found".format(bb_last.op_type))
 
         return if_part, else_part
+
+    def last_command(self, sub):
+        return sub.commands[self.address + self.length - 1]
 
     def clear_conditional(self):
         del self.params["if"]

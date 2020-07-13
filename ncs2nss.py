@@ -11,10 +11,13 @@ import control_flow
 import data_flow
 import backend
 import fingerprint
+import run_idioms
 from fingerprint import FingerprintLibrary, GlobalSet
 
 from rply.errors import ParsingError
 import pickle
+
+import parser_idioms
 
 
 def main():
@@ -93,8 +96,8 @@ class NCSProgram:
                         args = []
                     retn_type = retn_type.strip()
 
-                    print(args)
-                    print(retn_type)
+                    # print(args)
+                    # print(retn_type)
                 elif cur_sub_name == "StartingConditional":
                     retn_type = "int"
                     args = []
@@ -114,12 +117,15 @@ class NCSProgram:
     def to_nss(self):
         # Parse all the subroutines
 
+        print("Parsing subroutines")
         parsed_subs = {}
         for sub_name in self.subs:
+            print("   Parsing subroutine {}".format(sub_name))
             parsed_subs[sub_name] = self.subs[sub_name].parse()
 
         print("Parsed subs")
 
+        print("Parsing globals")
         # If there are global variables, parse them first
         if "global" in parsed_subs:
             _, global_matrix = data_flow.df_analysis(parsed_subs["global"], self.subs, None)
@@ -128,7 +134,7 @@ class NCSProgram:
             global_values = global_matrix.matrix.last_frame()
             global_types = global_matrix.types.last_frame()
 
-            print(global_values)
+            # print(global_values)
 
             while global_values[-1] is None:
                 global_values.pop()
@@ -138,29 +144,39 @@ class NCSProgram:
         else:
             global_data = NCSGlobals([], [])
 
+        print("Performing data-flow analysis")
         # Reduce subroutines using data flow analysis
         df_subs = {}
         for sub_name in parsed_subs:
-            print("Computing data flow for sub {}".format(sub_name))
-            print("Parsing sub {}".format(sub_name))
-            for i, line in enumerate(self.subs[sub_name].lines):
-                print("{}: {}".format(i, line))
+            print("   Data flow for {}".format(sub_name))
+            # print("Computing data flow for sub {}".format(sub_name))
+            # print("Parsing sub {}".format(sub_name))
+            # for i, line in enumerate(self.subs[sub_name].lines):
+            #     print("{}: {}".format(i, line))
             # df_subs[sub_name] = data_flow.DataFlow(parsed_subs[sub_name]).blocks
             df_subs[sub_name] = copy.deepcopy(parsed_subs[sub_name])
             df_subs[sub_name].commands, _ = data_flow.df_analysis(parsed_subs[sub_name], self.subs, global_data)
 
+        print("Performing control-flow analysis")
         # Reduce subroutines using control flow analysis
         cf_subs = {}
         for sub_name in df_subs:
+            print("   Control flow for {}".format(sub_name))
             cf_subs[sub_name] = control_flow.ControlFlowAnalysis(df_subs[sub_name])
 
+        print("Converting to NSS code")
         # Reduce control flow analysis to NSS code
         nss_subs = {}
         signatures = {}
         for sub_name in cf_subs:
+            print("   NSS code for {}".format(sub_name))
             retn_type = self.subs[sub_name].retn_type
             sub_header = cf_subs[sub_name].header
             code = backend.write_code(sub_header, 1, None, None, None, None, None, cf_subs[sub_name], None)
+
+            for bb in cf_subs[sub_name].blocks:
+                if not bb.traversed:
+                    print("Warning: basic block {} was not written to code".format(bb))
 
             args = []
             for i, i_type in enumerate(self.subs[sub_name].args):
@@ -230,7 +246,7 @@ class NCSGlobals:
         offset = 0
         i = 0
         for x, x_type in reversed(list(zip(self.global_values, self.global_types))):
-            print("Global {} is at position {}".format(x, offset))
+            # print("Global {} is at position {}".format(x, offset))
 
             self.global_vars[offset] = ("GLOBAL_{}".format(i), x_type)
             offset -= 4
@@ -244,7 +260,12 @@ class NCSGlobals:
 
     def from_offset(self, bp_offset):
         if bp_offset not in self.global_vars:
-            return ("unknown_global", "unknown_type")
+            raise Exception("Could not find global at offset {} - I have globals from {} to {}".format(
+                bp_offset,
+                min(self.global_vars.keys()),
+                max(self.global_vars.keys())
+            ))
+            # return ("unknown_global", "unknown_type")
         return self.global_vars[bp_offset]
 
 
@@ -255,6 +276,9 @@ class NCSSubprocess:
         self.labels = labels
 
         self.retn_type = retn_type
+        if self.retn_type == "struct":
+            self.retn_type = "vector"
+
         self.args = args
 
         self.arg_types = []
@@ -329,7 +353,7 @@ class NCSSubprocess:
         p = parser.get_parser()
 
         with_semicolons = "\n".join([line + ";" for line in self.lines])
-        print(with_semicolons)
+        # print(with_semicolons)
         try:
             parsed = p.parse(lexer.lex(with_semicolons))
         except ParsingError as e:
@@ -338,6 +362,11 @@ class NCSSubprocess:
             raise e
         parsed.name = self.name
         parsed.labels = self.labels
+
+        run_idioms.reduce_idioms(parsed.commands, parser_idioms.IDIOMS)
+
+        # for i, command in enumerate(parsed.commands):
+        #     print("{}: {}".format(i, command))
 
         return parsed
 
@@ -392,10 +421,10 @@ def preprocess(x):
 
 
 if __name__ == "__main__":
-    print("Loading library")
-    with open("library.pickle", "rb") as f:
-        fp_library = pickle.load(f)
-        print(fp_library.known_vars)
+    # print("Loading library")
+    # with open("library.pickle", "rb") as f:
+    #     fp_library = pickle.load(f)
+    #     print(fp_library.known_vars)
 
     print("Decompiling")
     main()

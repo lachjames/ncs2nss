@@ -1,3 +1,55 @@
+class ObjectType:
+    INT, FLOAT, STRING, OBJECT, LOCATION, EFFECT, EVENT, TALENT, ITEMPROPERTY, VECTOR = range(10)
+
+    MAP = {
+        "i": INT,
+        "f": FLOAT,
+        "s": STRING,
+        "o": OBJECT,
+        "l": LOCATION,
+        "0": EFFECT,
+        "1": EVENT,
+        "2": LOCATION,
+        "3": TALENT,
+        "4": ITEMPROPERTY,
+        "v": VECTOR
+    }
+
+    INV_MAP = {
+        v: k for k, v in MAP.items()
+    }
+
+    NAME_MAP = {
+        INT: "int",
+        FLOAT: "float",
+        STRING: "string",
+        OBJECT: "object",
+        LOCATION: "location",
+        EFFECT: "effect",
+        EVENT: "event",
+        TALENT: "talent",
+        ITEMPROPERTY: "itemproperty",
+        VECTOR: "vector"
+    }
+
+    INV_NAME_MAP = {
+        v: k for k, v in NAME_MAP.items()
+    }
+
+    DEFAULT_MAP = {
+        INT: 0,
+        FLOAT: 0.0,
+        STRING: "",
+        VECTOR: "[0.0, 0.0, 0.0]"
+    }
+
+    @staticmethod
+    def size(obj_type):
+        if obj_type is ObjectType.VECTOR:
+            return 3
+        return 1
+
+
 class Constant:
     def __init__(self, const_type, value):
         self.const_type = const_type
@@ -167,6 +219,16 @@ class NSSVector(NSSTerminal):
         return NSSStructAccess(self.value, idx)
 
 
+class NSSVectorConstant(NSSTerminal):
+    def __init__(self, x, y, z):
+        self.x = x
+        self.y = y
+        self.z = z
+
+    def __str__(self):
+        return "[{}, {}, {}]".format(self.x, self.y, self.z)
+
+
 class NSSStructAccess(NSSTerminal):
     def __init__(self, variable, idx):
         self.variable = variable
@@ -203,3 +265,83 @@ class NSSArgumentAccess(NSSTerminal):
 
     def __str__(self):
         return self.name
+
+
+class VectorDefinition:
+    def __init__(self, rsadds):
+        self.rsadds = rsadds
+
+
+class GetVectorElement:
+    def __init__(self, get_vector, destruct):
+        self.get_vector = get_vector
+        self.destruct = destruct
+
+
+class VectorAssignment:
+    def __init__(self, cpdownsp):
+        self.cpdownsp = cpdownsp
+        # self.movesp = movesp
+
+
+class GetVector:
+    def __init__(self, cptopsp):
+        self.cptopsp = cptopsp
+
+
+class VectorIndex:
+    def __init__(self, var_name, index):
+        self.var_name = var_name
+        self.index = index
+
+    def __str__(self):
+        return "{}.{}".format(self.var_name, self.index)
+
+
+class VectorValue:
+    def __init__(self, x, y, z):
+        self.x = x
+        self.y = y
+        self.z = z
+
+    def __str__(self):
+        return "[{}, {}, {}]".format(self.x, self.y, self.z)
+
+
+class VectorVariable(Variable):
+    pass
+
+
+class VectorView:
+    def __init__(self, vector, idx):
+        self.vector = vector
+        self.idx = idx
+
+    def __str__(self):
+        return "{}.{}".format(self.vector, self.idx)
+
+
+class VectorComponent(NSSTerminal):
+    def __str__(self):
+        return str(self.expression)
+
+
+class VectorCreate:
+    def __init__(self, x, y, z):
+        self.x = x
+        self.y = y
+        self.z = z
+
+    def __str__(self):
+        return "vector {}".format(self.x, self.y, self.z)
+
+
+class VectorAssign:
+    def __init__(self, var_name, x, y, z):
+        self.var_name = var_name
+        self.x = x
+        self.y = y
+        self.z = z
+
+    def __str__(self):
+        return "{} = [{}, {}, {}]".format(self.var_name, self.x, self.y, self.z)

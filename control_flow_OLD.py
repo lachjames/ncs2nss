@@ -4,8 +4,8 @@
 # import time
 # import pydot
 #
-# from util import OrderedSet
-#
+# from data_structures.util import OrderedSet
+
 # class ControlFlowAnalysis:
 #     def __init__(self, subroutine):
 #         self.sub = subroutine
