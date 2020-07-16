@@ -22,15 +22,27 @@ ncs2nss is still in active development. To test it out, run the following comman
 If the decompilation was a success, you will find the file "decompiled.nss", which will (hopefully) contain the decompiled code.
 
 ## Known Issues and Limitations
-This project is very new and there are bound to be bugs - in all honestly, it is more likely that a given .ncs file will not decompile completely correctly, than that it will. For simple scripts ncs2nss might work, but please be aware of the following known bugs and limitations:
- - ncs2nss is currently being written to read .ncs files either from the original compiler used during game development, or by nwnnsscomp.exe _with the --optimise flag NOT set_. There is no particular reason why the program cannot be extended to work with optimized code, but this will require some changes to how the data flow analysis is done. If you are finding this to be a limitation, please file an issue so I know to make this a higher priority.
- - Currently, we rely on the control flow analysis by xoreos-tools's "ncsdis" tool to identify subroutine signatures. Their implementation works very well most of the time, but it does not work on recursive functions. I have some ideas about this, and plan to discuss it with them. For now, if ncsdis can't analyze the control flow, the function signatures will probably be incorrect (along with the code, because not knowing the return values - or if a function has a return value at all - can significantly mess up the data flow analysis).
- - Nested loops seem to work fine, but loops with multiple conditions combined with && or || do not work properly (I'm working on it...). There is also an issue where some do-while loops are indistinguishable from some while loops (I think fixing the compound conditional issues will also fix this).
+This project is very new and there are bound to be bugs. For simple files, it seems to work with no issues - but for complex files it can struggle to decompile completely correctly.
+
+Please be aware of the following known bugs and limitations:
+ 
+### Known Bug/Missing Features List
+ - Sometimes return statements are duplicated
+ - Determining switch vs if statements is non-trivial and might not always work
+ - Global parsing takes longer than it should.
+ - Do loops aren't currently working properly, though I'm working on it
+ - I need to improve the argument detection algorithm.
+ - Some blocks of code are not being written, so it seems some of the control flow logic is incorrect.
  - Break and continue statements not yet supported; also a high priority.
- - Vector support has been added (tenatively, with possible bugs).
- - We do not recognize structs (this isn't a bug; structs are flattened out in the compilation process and, while it's possible to sometimes find them by recognizing compiler artifacts, in the general case I think it's impossible to distinguish structs from a loose bunch of variables in the general case anyway).
+ - Currently, we rely on the control flow analysis by xoreos-tools's "ncsdis" tool to identify subroutine signatures. Their implementation works very well most of the time, but it does not work on recursive functions. I have some ideas about this, and plan to discuss it with them. For now, if ncsdis can't analyze the control flow, I have heuristics to try to figure the function signatures out but the computed signatures have a high chance of being incorrect. This can cause ripple effects and errors througout the rest of the decompiled code as well.
+ - I am working on a side project which will scan the NCS code for library functions (functions which match a function included in the NSS files that come with a particular game) and use those functions from the library rather than decompiling them from scratch. This will make decompilation both quicker and more accurate, but it's not simple to implement. I'll have it before the official release, though.
+ 
+### Known "Not-A-Bug" List
+ - Decompilation can seem to take significantly longer than DeNCS does - however, this is because of all the debug information being written to disk (including control flow diagrams and stack diagrams). Before release, I will add some features to control debug output (defaulting to off, making the program run with speed similar to DeNCS).
+ - There's no GUI yet, but I'm going to add this before release too. For now, it's command-line only.
+ - ncs2nss is currently being written to read .ncs files either from the original compiler used during game development, or by nwnnsscomp.exe _with the --optimise flag NOT set_. There is no particular reason why the program cannot be extended to work with optimized code, except that it will require more edge-case detection and code complexity. If you are finding this to be a limitation, please file an issue so I know to make this a higher priority.
+ - Structs are ignored (except for float vectors, which are detected and treated specially). This should not be an issue as I'm not aware of any code which takes structs as arguments (or returns them), but if I'm wrong please log an issue so I can make fixing this a priority.
  - ncs2nss is being developed for KOTOR and KOTOR 2 modding; it might work for other games but I make no guarantees. Hopefully I will be able to integrate much of my work with the xoreos-tools project, where others who are well-versed in the other games using NSS scripting can make it more compatible with other games. For now, it might or might not work (given you provide your own nwscript.nss file).
- - Switch statements are decompiled into if statements; recognizing switch statemetents might be possible, but it's a low priority - some languages (including my favourite, Python) don't support switches to begin with so it's not like it's a dealbreaker.
  
 ## Background
 This project is mainly based on algorithms developed by Cristina Cifuentes for her 1994 thesis "Reverse Decompilation Techniques" (and the subsequent papers spawned from this thesis). Much of the thesis, as well as other literature in the field, focuses on difficult decompilation cases arising from things like:
