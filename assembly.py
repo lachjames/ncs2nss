@@ -206,6 +206,11 @@ class Subroutine:
         self.name = None
         self.labels = None
 
+        self.num_args = None
+        self.arg_types = []
+        self.has_return = None
+        self.return_type = None
+
         if type(self.commands[-1]) is not Return:
             self.commands.append(Return())
 

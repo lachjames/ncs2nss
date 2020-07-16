@@ -7,6 +7,6 @@ void main () {
 
     while (i < 10) {
         PrintInteger(mult2(i));
-        i += 1;
+        i++;
     }
 }

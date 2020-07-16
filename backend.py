@@ -1,6 +1,8 @@
 import assembly as asm
 import data_flow as df
 import control_flow as cf
+import control_analysis as ca
+from data_flow_types import BinaryOperation
 
 NSS_TYPES = {
     0: "int"
@@ -17,11 +19,11 @@ def get_loop_data(bb, cfa, code):
     # for ds in cfa.steps:
     #     # Peel back the layers to find the header node
     #     for interval in ds.blocks:
-    #         if type(interval) is not cf.Interval or not interval.loop:
+    #         if type(interval) is not ca.Interval or not interval.loop:
     #             continue
     #
     #         x = interval
-    #         while type(x) is cf.Interval:
+    #         while type(x) is ca.Interval:
     #             x = x.header
     #
     #         print("Header: ", x)
@@ -41,32 +43,21 @@ def get_if_data(bb, cfa, code):
         return bb.params["if"]
     return None
 
-    # print("Checking if {} is an if".format(bb))
-    # for ds in cfa.steps:
-    #     # Peel back the layers to find the header node
-    #     for interval in ds.blocks:
-    #         if type(interval) is not cf.Interval:
-    #             continue
-    #
-    #         for if_statement in interval.ifs:
-    #             if bb is if_statement.header.header:
-    #                 print("{} is header of {}".format(bb, if_statement))
-    #                 return if_statement
-    #
-    # return False
-
 
 def is_2_way(bb, cfa, code):
     return get_if_data(bb, cfa, code) is not None
 
 
 def is_n_way(bb, cfa, code):
-    return False
+    return "case_nodes" in bb.params
 
 
 def write_bb(bb, i, cfa, code):
     bb.traversed = True
+    # if "last_block" in bb.params:
+    #     return
     for line in cfa.sub.commands[bb.address:bb.address + bb.length]:
+
         if line is None:
             continue
         if type(line) in (asm.Jump, asm.ConditionalJump):
@@ -91,6 +82,13 @@ def write_bb(bb, i, cfa, code):
         elif "break" in bb.params and bb.params["break"]:
             code.append(INDENT * i + "break;\n")
 
+    if "return_cmds" in bb.params and len(bb.succs) == 1:
+        print("Block {} has return commands")
+        for cmd in bb.params["return_cmds"]:
+            if cmd is None:
+                continue
+            code.append(INDENT * i + str(cmd) + ";\n")
+
 
 def write_loop(bb, i, loop_data, latch_node, if_follow, n_follow, cur_if, cur_loop, cfa, code):
     print("Writing loop {}".format(bb))
@@ -100,18 +98,18 @@ def write_loop(bb, i, loop_data, latch_node, if_follow, n_follow, cur_if, cur_lo
     loop_type = loop_data.loop_type()
 
     # Loop header
-    if loop_type is cf.LoopType.PRETESTED:
+    if loop_type is ca.LoopType.PRETESTED:
         write_bb(bb, i, cfa, code)
         condition = cfa.sub.commands[bb.address + bb.length - 1].conditional
         code.append(INDENT * i + "while ({}) {{\n".format(str(condition)))
-    elif loop_type is cf.LoopType.POSTTESTED:
+    elif loop_type is ca.LoopType.POSTTESTED:
         code.append(INDENT * i + "do {\n")
         # bb.traversed = False
         if "if" in bb.params:
             write_2_way(bb, i + 1, latch_node, if_follow, n_follow, cur_if, loop_data, cfa, code)
         else:
             write_bb(bb, i + 1, cfa, code)
-    elif loop_type is cf.LoopType.ENDLESS:
+    elif loop_type is ca.LoopType.ENDLESS:
         raise Exception("Endless loops not yet implemented")
 
     # Loop body
@@ -128,7 +126,9 @@ def write_loop(bb, i, loop_data, latch_node, if_follow, n_follow, cur_if, cur_lo
     if bb is not loop_data.back:
         # Write code for all successors of bb inside the loop
         for s in bb.succs:
-            if s in loop_data.nodes or loop_type is not cf.LoopType.PRETESTED:
+            if s in loop_data.nodes or loop_type is not ca.LoopType.PRETESTED:
+                print(loop_data.nodes)
+                print(s)
                 ## print("{} is inside the loop".format(s))
                 # print("Traversing {}".format(s))
                 # TODO: Check if this is a bug in the thesis?
@@ -139,13 +139,13 @@ def write_loop(bb, i, loop_data, latch_node, if_follow, n_follow, cur_if, cur_lo
 
     ## print("Finished writing loop body")
     # Loop trailer
-    if loop_type is cf.LoopType.PRETESTED:
+    if loop_type is ca.LoopType.PRETESTED:
         code.append(INDENT * i + "}\n")
-    elif loop_type is cf.LoopType.POSTTESTED:
+    elif loop_type is ca.LoopType.POSTTESTED:
         back_bb = list(loop_data.back.preds)[0]
         back_conditional = cfa.sub.commands[back_bb.address + back_bb.length - 1].conditional
         code.append(INDENT * i + "}} while ({});\n".format(back_conditional))
-    elif loop_type is cf.LoopType.ENDLESS:
+    elif loop_type is ca.LoopType.ENDLESS:
         pass
     else:
         raise Exception("Invalid loop type {} found".format(loop_type))
@@ -166,7 +166,9 @@ def write_1_way(bb, i, latch_node, if_follow, n_follow, cur_if, cur_loop, cfa, c
         # This is a return node
         return
     elif len(bb.succs) > 1:
-        raise Exception("Writing 1-way node {} with multiple successors!".format(bb))
+        print("Warning: writing node {} with {} successors as 1-way node".format(bb, bb.succs))
+        print("  (this is fine if it's a case node)")
+        # raise Exception("Writing 1-way node {} with multiple successors!".format(bb))
 
     if "no_follow" in bb.params:
         return
@@ -182,6 +184,7 @@ def write_1_way(bb, i, latch_node, if_follow, n_follow, cur_if, cur_loop, cfa, c
 
 def write_2_way(bb, i, latch_node, if_follow, n_follow, cur_if, cur_loop, cfa, code):
     bb.traversed = True
+
     if_data = get_if_data(bb, cfa, code)
 
     # Check if we are an else if component of an if statement
@@ -197,6 +200,12 @@ def write_2_way(bb, i, latch_node, if_follow, n_follow, cur_if, cur_loop, cfa, c
     write_bb(bb, i, cfa, code)
 
     condition = cfa.sub.commands[bb.address + bb.length - 1].conditional
+    # TODO: This is awfully hacky
+    if str(condition) == "unknown_var":
+        for succ in bb.succs:
+            write_code(succ, i, latch_node, if_follow, n_follow, cur_if, cur_loop, cfa, code)
+        return
+
     code.append(INDENT * i + ("} else " if is_else_if else "") + "if ({}) {{\n".format(str(condition)))
     # code.append(INDENT * i + "{\n")
 
@@ -236,7 +245,39 @@ def write_2_way(bb, i, latch_node, if_follow, n_follow, cur_if, cur_loop, cfa, c
 
 
 def write_n_way(bb, i, latch_node, if_follow, n_follow, cur_if, cur_loop, cfa, code):
-    pass
+    write_bb(bb, i, cfa, code)
+
+    condition = cfa.sub.commands[bb.address + bb.length - 1].conditional
+    # assert type(condition) is BinaryOperation, "{} should be a binary operation".format(condition)
+    if type(condition) is not BinaryOperation:
+        var = "unknown_var"
+        print("Warning: {} should be of type BinaryOperation".format(condition))
+    else:
+        var = condition.a
+    code.append(INDENT * i + "switch ({}) {{\n".format(var))
+
+    case_nodes = bb.params["case_nodes"]
+    for k, (case_node, on_true) in enumerate(case_nodes):
+        condition = cfa.sub.commands[case_node.address + case_node.length - 1].conditional
+        if type(condition) is not BinaryOperation:
+            value = "unknown"
+            print("Warning: {} should be of type BinaryOperation".format(condition))
+        else:
+            value = condition.b
+        code.append(INDENT * i + "case {}:\n".format(value))
+        if k < len(case_nodes) - 1 and on_true is case_nodes[k + 1][1]:
+            # Case falls through
+            pass
+        else:
+            write_code(on_true, i + 1, latch_node, if_follow, bb.params["switch_follow"], cur_if, cur_loop, cfa, code)
+            # code.append(INDENT * (i + 1) + "break;\n")
+    # Write the default case if it exists
+    if bb.params["default_case"] is not None:
+        code.append(INDENT * i + "default:\n")
+        write_code(bb.params["default_case"], i + 1, latch_node, if_follow, bb.params["switch_follow"], cur_if, cur_loop, cfa, code)
+
+    code.append(INDENT * i + "}\n")
+    write_code(bb.params["switch_follow"], i, latch_node, if_follow, n_follow, cur_if, cur_loop, cfa, code)
 
 
 def write_code(bb, i, latch_node, if_follow, n_follow, cur_if, cur_loop, cfa, code):
@@ -250,21 +291,19 @@ def write_code(bb, i, latch_node, if_follow, n_follow, cur_if, cur_loop, cfa, co
     if bb.traversed:
         return
 
-    print("Writing {}".format(bb))
-
     bb.traversed = True
-    print("Setting {} as traversed from write_code".format(bb))
+    # print("Setting {} as traversed from write_code".format(bb))
 
     if is_loop_header(bb, cfa, code) and get_loop_data(bb, cfa, code) is not cur_loop:
         print("Writing loop {}".format(bb))
         loop_data = get_loop_data(bb, cfa, code)
         write_loop(bb, i, loop_data, latch_node, if_follow, n_follow, cur_if, cur_loop, cfa, code)
+    elif is_n_way(bb, cfa, code):
+        # raise Exception("Switch statements not currently supported")
+        write_n_way(bb, i, latch_node, if_follow, n_follow, cur_if, cur_loop, cfa, code)
     elif is_2_way(bb, cfa, code):
         print("Writing if {}".format(bb))
         write_2_way(bb, i, latch_node, if_follow, n_follow, cur_if, cur_loop, cfa, code)
-    # elif is_n_way(bb, cfa, code):
-    #     # raise Exception("Switch statements not currently supported")
-    #     write_n_way(bb, i, latch_node, if_follow, n_follow, cur_if, cur_loop, cfa, code)
     else:
         print("Writing 1-way {}".format(bb))
         write_1_way(bb, i, latch_node, if_follow, n_follow, cur_if, cur_loop, cfa, code)

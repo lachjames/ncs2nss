@@ -886,7 +886,7 @@
 #             h = self.header.nodes[0]
 #             jump = sub.commands[h.address + h.length - 1]
 #             assert type(jump) is asm.ConditionalJump, "Expected {} to be type asm.ConditionalJump but is {}".format(jump, type(jump))
-#             conditional = jump.conditional
+#            ca.jump.conditional
 #             code += str(conditional)
 #             code += ")\n{\n"
 #

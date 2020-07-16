@@ -189,6 +189,11 @@ class NSSAction(NSSTerminal):
         return self.get_value()
 
 
+class NSSReturnVoid():
+    def __str__(self):
+        return "return"
+
+
 class NSSReturnValue(NSSTerminal):
     def __str__(self):
         return "return {}".format(self.expression)

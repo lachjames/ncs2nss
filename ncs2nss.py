@@ -30,7 +30,7 @@ def main():
         # Compile first if ends with nss
         if infile.endswith("nss"):
             # subprocess.run("nwnnsscomp.exe -c --optimize -o tmp.ncs {}".format(infile), shell=True)
-            subprocess.run("nwnnsscomp.exe -c -o tmp.ncs {}".format(infile), shell=True)
+            subprocess.run("nwnnsscomp.exe -c {} -o tmp.ncs".format(infile), shell=True)
         else:
             shutil.copy(infile, "tmp.ncs")
 
@@ -82,7 +82,7 @@ class NCSProgram:
             else:
                 # Save the current sub
                 if cur_sub_name is not None:
-                    sub = NCSSubprocess(cur_sub_name, cur_sub_lines, cur_sub_labels, retn_type, args)
+                    sub = NCSSubroutine(cur_sub_name, cur_sub_lines, cur_sub_labels, retn_type, args)
                     self.subs[cur_sub_name] = sub
 
                 cur_sub_name = line.split(";")[0].strip().replace("_", "").replace(":", "")
@@ -109,7 +109,7 @@ class NCSProgram:
                 cur_sub_labels = {}
 
         # Push the final sub
-        sub = NCSSubprocess(cur_sub_name, cur_sub_lines, cur_sub_labels, retn_type, args)
+        sub = NCSSubroutine(cur_sub_name, cur_sub_lines, cur_sub_labels, retn_type, args)
         self.subs[cur_sub_name] = sub
 
         # print(self.subs)
@@ -125,10 +125,56 @@ class NCSProgram:
 
         print("Parsed subs")
 
+        print("Performing heuristic signature analysis")
+        # Reduce subroutines using data flow analysis
+        signature_subs = {}
+
+        for sub_name in parsed_subs:
+            print("Parsing sub {}".format(sub_name))
+            # for i, line in enumerate(self.subs[sub_name].lines):
+            #     print("{}: {}".format(i, line))
+
+            if sub_name in ("main", "global"):
+                parsed_subs[sub_name].num_args = 0
+                parsed_subs[sub_name].has_return = False
+                continue
+
+            if sub_name == "StartingConditional":
+                parsed_subs[sub_name].num_args = 0
+                parsed_subs[sub_name].has_return = True
+                continue
+
+            print("   Signature analysis for {}".format(sub_name))
+            print("Computing data flow for sub {}".format(sub_name))
+            num_args, confidence = data_flow.num_args(parsed_subs[sub_name])
+
+            if not confidence:
+                if parsed_subs[sub_name].num_args is not None:
+                    print("Using xoreos's opinion on num args as I'm not confident")
+                    num_args = parsed_subs[sub_name].num_args
+                else:
+                    print("I'm not confident but xoreos doesn't know so using my guess...")
+            else:
+                print("Confident that my value is right!")
+
+            has_return = data_flow.has_return(parsed_subs[sub_name], num_args)
+
+            if parsed_subs[sub_name].num_args is not None:
+                if parsed_subs[sub_name].num_args != num_args:
+                    print("Warning: num args discrepency; xoreos thinks {} and I think {}".format(
+                        parsed_subs[sub_name].num_args,
+                        num_args
+                    ))
+            parsed_subs[sub_name].num_args = num_args
+            parsed_subs[sub_name].has_return = has_return
+
+            print("Sub {} has {} args and has_return = {}".format(sub_name, num_args, has_return))
+            # print(sub_final_sp)
+
         print("Parsing globals")
         # If there are global variables, parse them first
         if "global" in parsed_subs:
-            _, global_matrix = data_flow.df_analysis(parsed_subs["global"], self.subs, None)
+            _, global_matrix, _ = data_flow.df_analysis(parsed_subs["global"], parsed_subs, None, 0)
             with open("html/global_parser.html", "w") as f:
                 f.write(global_matrix.html())
             global_values = global_matrix.matrix.last_frame()
@@ -144,9 +190,14 @@ class NCSProgram:
         else:
             global_data = NCSGlobals([], [])
 
+        print("Calculating return types")
+        for sub_name in parsed_subs:
+            data_flow.df_analysis(parsed_subs[sub_name], parsed_subs, global_data, n_pass=0)
+
         print("Performing data-flow analysis")
         # Reduce subroutines using data flow analysis
         df_subs = {}
+        sub_tails = {}
         for sub_name in parsed_subs:
             print("   Data flow for {}".format(sub_name))
             # print("Computing data flow for sub {}".format(sub_name))
@@ -154,15 +205,22 @@ class NCSProgram:
             # for i, line in enumerate(self.subs[sub_name].lines):
             #     print("{}: {}".format(i, line))
             # df_subs[sub_name] = data_flow.DataFlow(parsed_subs[sub_name]).blocks
-            df_subs[sub_name] = copy.deepcopy(parsed_subs[sub_name])
-            df_subs[sub_name].commands, _ = data_flow.df_analysis(parsed_subs[sub_name], self.subs, global_data)
+            df_subs[sub_name] = parsed_subs[sub_name]
+            df_subs[sub_name].commands, _, return_tails = data_flow.df_analysis(df_subs[sub_name], parsed_subs, global_data, n_pass=1)
+            sub_tails[sub_name] = return_tails
+
+        for sub_name in parsed_subs:
+            print("Sub {}".format(sub_name))
+            for i, line in enumerate(df_subs[sub_name].commands):
+                print("{}: {}".format(i, line))
+            print()
 
         print("Performing control-flow analysis")
         # Reduce subroutines using control flow analysis
         cf_subs = {}
         for sub_name in df_subs:
             print("   Control flow for {}".format(sub_name))
-            cf_subs[sub_name] = control_flow.ControlFlowAnalysis(df_subs[sub_name])
+            cf_subs[sub_name] = control_flow.ControlFlowAnalysis(df_subs[sub_name], sub_tails[sub_name])
 
         print("Converting to NSS code")
         # Reduce control flow analysis to NSS code
@@ -170,7 +228,10 @@ class NCSProgram:
         signatures = {}
         for sub_name in cf_subs:
             print("   NSS code for {}".format(sub_name))
-            retn_type = self.subs[sub_name].retn_type
+            if df_subs[sub_name].return_type is None:
+                retn_type = "void"
+            else:
+                retn_type = data_flow.ObjectType.NAME_MAP[df_subs[sub_name].return_type]
             sub_header = cf_subs[sub_name].header
             code = backend.write_code(sub_header, 1, None, None, None, None, None, cf_subs[sub_name], None)
 
@@ -179,12 +240,12 @@ class NCSProgram:
                     print("Warning: basic block {} was not written to code".format(bb))
 
             args = []
-            for i, i_type in enumerate(self.subs[sub_name].args):
+            for i, i_type in enumerate(df_subs[sub_name].arg_types):
                 i_name = "arg" + str(i)
                 if i_type is None:
                     args.append("unknown {}".format(i_name))
                 else:
-                    args.append("{} {}".format(i_type, i_name))
+                    args.append("{} {}".format(data_flow.ObjectType.NAME_MAP[i_type], i_name))
 
             arg_str = ", ".join(args)
             function_signature = "{} {}({});".format(
@@ -260,33 +321,33 @@ class NCSGlobals:
 
     def from_offset(self, bp_offset):
         if bp_offset not in self.global_vars:
-            raise Exception("Could not find global at offset {} - I have globals from {} to {}".format(
+            print("Warning: could not find global at offset {} - I have globals from {} to {}".format(
                 bp_offset,
                 min(self.global_vars.keys()),
                 max(self.global_vars.keys())
             ))
-            # return ("unknown_global", "unknown_type")
+            return ("unknown_global", "unknown_type")
         return self.global_vars[bp_offset]
 
 
-class NCSSubprocess:
+class NCSSubroutine:
     def __init__(self, name, lines, labels, retn_type, args):
         self.name = name
         self.lines = lines
         self.labels = labels
 
-        self.retn_type = retn_type
-        if self.retn_type == "struct":
-            self.retn_type = "vector"
+        # self.retn_type = retn_type
+        # if self.retn_type == "struct":
+        #     self.retn_type = "vector"
 
-        self.args = args
+        # self.args = args
 
-        self.arg_types = []
-
-        if self.name in ("global", "main", "StartingConditional"):  # , "StartingConditional"):
-            self.num_args = 0
-        else:
-            self.num_args = len(self.args)
+        # self.arg_types = []
+        #
+        # if self.name in ("global", "main", "StartingConditional"):  # , "StartingConditional"):
+        #     self.num_args = 0
+        # else:
+        #     self.num_args = len(self.args)
         # # Check if the second-last
         # elif len(self.lines) < 2:
         #     self.num_args = 0
@@ -367,6 +428,9 @@ class NCSSubprocess:
 
         # for i, command in enumerate(parsed.commands):
         #     print("{}: {}".format(i, command))
+
+        # parsed.num_args = self.num_args
+        # parsed.retn_type = self.retn_type
 
         return parsed
 
