@@ -9,27 +9,28 @@ There are a few goals underpinning this project:
  - (My own goal) learn about decompilation theory, and hopefully use this tool as an example for others who might wish to implement a simple decompiler (my end goal here is to create a YouTube video series on decompilation)
 
 ## Requirements
-This decompiler is implemented in Python (written for Python 3.7 and I do recommend that you use 3.7+ because I sometimes rely on newer Python features in my code). It might work fine with earlier versions, but I make no guarantees.
+This decompiler is implemented in Python (written for Python 3.7 and I do recommend that you use 3.7+ because I sometimes rely on newer Python features in my code). It might work fine with earlier versions, but I make no guarantees. Once I make a public release of an alpha version, I'll make a .exe file to simplify installation.
 
 ## Installation
 Either download the repository as a zip file, or clone it onto your local machine.
 
 ## Usage
-ncs2nss is still in active (and very early) development. To test it out, run the following command from the base directory of the repository:
+ncs2nss is still in active development. To test it out, run the following command from the base directory of the repository:
 
-> python test_parser.py [NCS file]
+> python ncs2nss.py [NCS file]
 
-If the decompilation was a success, you will find the file "decompiled.nss", which will (hopefully) contain the decompiled files.
+If the decompilation was a success, you will find the file "decompiled.nss", which will (hopefully) contain the decompiled code.
 
 ## Known Issues and Limitations
-This project is very new and there are bound to be bugs - in all honestly, it is more likely that a given .ncs file will not decompile completely correctly, than that it will. For simple scripts ncs2nss might work perfectly, but please be aware of the following known bugs and limitations:
+This project is very new and there are bound to be bugs - in all honestly, it is more likely that a given .ncs file will not decompile completely correctly, than that it will. For simple scripts ncs2nss might work, but please be aware of the following known bugs and limitations:
  - ncs2nss is currently being written to read .ncs files either from the original compiler used during game development, or by nwnnsscomp.exe _with the --optimise flag NOT set_. There is no particular reason why the program cannot be extended to work with optimized code, but this will require some changes to how the data flow analysis is done. If you are finding this to be a limitation, please file an issue so I know to make this a higher priority.
- - Nested loops seem to work fine, but loops with multiple conditions combined with && or || do not work properly (I'm working on it...). Do-while loops and infinite loops also (probably) do not work; this is a bug, not a feature, but there's a clear roadmap for fixing it.
+ - Currently, we rely on the control flow analysis by xoreos-tools's "ncsdis" tool to identify subroutine signatures. Their implementation works very well most of the time, but it does not work on recursive functions. I have some ideas about this, and plan to discuss it with them. For now, if ncsdis can't analyze the control flow, the function signatures will probably be incorrect (along with the code, because not knowing the return values - or if a function has a return value at all - can significantly mess up the data flow analysis).
+ - Nested loops seem to work fine, but loops with multiple conditions combined with && or || do not work properly (I'm working on it...). There is also an issue where some do-while loops are indistinguishable from some while loops (I think fixing the compound conditional issues will also fix this).
  - Break and continue statements not yet supported; also a high priority.
  - Vector support has been added (tenatively, with possible bugs).
- - Detecting structs is maybe possible due to a compiler artifact where it allocates all the space for a struct before setting values (rather than interleaving the creation and separation operations). I could add a feature which detects multiple spaces allocated in a row, and treats the resulting region of memory as a struct. This is a low priority as it does not affect compilability (only readability, which is still important but not as important as compilability).
+ - We do not recognize structs (this isn't a bug; structs are flattened out in the compilation process and, while it's possible to sometimes find them by recognizing compiler artifacts, in the general case I think it's impossible to distinguish structs from a loose bunch of variables in the general case anyway).
  - ncs2nss is being developed for KOTOR and KOTOR 2 modding; it might work for other games but I make no guarantees. Hopefully I will be able to integrate much of my work with the xoreos-tools project, where others who are well-versed in the other games using NSS scripting can make it more compatible with other games. For now, it might or might not work (given you provide your own nwscript.nss file).
- - Switch statements are decompiled into if statements; this should be a relatively easy fix but it's not high on my list of priorities - some languages (\*cough\* Python \*cough\*) don't support switches to begin with so it's not like it's a dealbreaker.
+ - Switch statements are decompiled into if statements; recognizing switch statemetents might be possible, but it's a low priority - some languages (including my favourite, Python) don't support switches to begin with so it's not like it's a dealbreaker.
  
 ## Background
 This project is mainly based on algorithms developed by Cristina Cifuentes for her 1994 thesis "Reverse Decompilation Techniques" (and the subsequent papers spawned from this thesis). Much of the thesis, as well as other literature in the field, focuses on difficult decompilation cases arising from things like:
@@ -43,8 +44,8 @@ With this in mind, we can see that NCS code is a relatively nice assembly langua
  - NSS has no "goto" statement and a fairly limited set of control structures, meaning that (barring compiler optimisations/bugs) 
  - NCS code does not use registers; it is a stack-only assembly language. This simplifies data flow analysis quite a bit, because we only need to trace variables on the stack.
 
-"Relatively simple" does not mean "simple" though, and there are still significant challenges which have to be overcome to implement a complete decompiler for NCS code:
- - Different compilers have different idioms, and earlier compilers (even the original ones created by game developers) contain bugs and implementation differences which must be reconcilled within the decompiler
+However, "relatively simple" isn't the same as "simple", and there are still significant challenges which have to be overcome to implement a complete decompiler for NCS code:
+ - Different compilers have different idioms, and earlier compilers (even the original ones created by game developers) contain bugs and implementation differences which must be reconcilled within the decompiler. Of course, they fixed those bugs in the later versions (which makes our job even harder as we can't just hard-code the bugs into our decompiler).
  - Capturing all the edge cases of decompilation is quite difficult, because even one error in a massive script can break the entire thing.
  - Similarly, one error in (e.g.) the stack analysis can propagate through the entire codebase, causing massive issues. So the decompiler has to be airtight in many difficult ways.
  
