@@ -106,6 +106,15 @@ def convert_cptopsp(i, command, sub, subs, global_data, matrix, n_pass):
 
     # We check if this is actually on the stack to begin with
     stack_pos = matrix.sp_offset_to_pos(i, command.a)
+    print("OG:", stack_pos)
+    print(type(matrix.matrix[i, stack_pos]))
+    while stack_pos >= 0 and type(matrix.matrix[i, stack_pos]) is NSSSSAction:
+        # Technically, the NSSSAction is not really "pushed" onto the stack;
+        # we just are overloading the use of the stack so we can push an "Action"
+        # onto the stack rather than executing it like normal
+        stack_pos -= 1
+
+    print("SP:", stack_pos)
 
     if stack_pos < 0:
         # We are copying either an argument or a global
@@ -126,13 +135,8 @@ def convert_cptopsp(i, command, sub, subs, global_data, matrix, n_pass):
         value = matrix.get_value(i, command.a)
         reference_type = matrix.types[i, stack_pos]
         # TODO: Do this in StackMatrix, not here (as other DFA analysis functions need this too)
-        if type(value) is NSSSSAction:
-            # Technically, the NSSSAction is not really "pushed" onto the stack;
-            # we just are overloading the use of the stack so we can push an "Action"
-            # onto the stack rather than executing it like normal
-            reference = matrix.get_value(i, command.a - 4)
 
-        elif name is not None:
+        if name is not None:
             reference = NSSReference(name)
             # In case we want to make a "reference to a reference" later,
             # we also copy the name here
@@ -153,7 +157,7 @@ def convert_cptopsp(i, command, sub, subs, global_data, matrix, n_pass):
             reference = NSSReference("unknown_var")
             reference_type = ObjectType.INT
 
-        # matrix.set_local(i, stack_pos)
+            # matrix.set_local(i, stack_pos)
 
     matrix.push(reference, reference_type, i)
 
@@ -457,14 +461,14 @@ def convert_ssjsr(i, command, sub, subs, global_data, matrix, n_pass):
     return return_val
 
 
-def action(i, command, matrix):
+def action(i, command, matrix, cls=NSSAction):
     func = NWSCRIPT.functions[command.label]
     modifier = len(func.func_args)
 
     args, arg_types = pop_args(i, matrix, modifier)
 
     # args = list(reversed(args))
-    return_val = NSSAction(func.func_name, args)
+    return_val = cls(func.func_name, args)
     return func, return_val
 
 
@@ -490,7 +494,7 @@ def convert_action(i, command, sub, subs, global_data, matrix, n_pass):
 
 @register_dfa(asm.SSAction)
 def convert_ssaction(i, command, sub, subs, global_data, matrix, n_pass):
-    func, return_val = action(i, command, matrix)
+    func, return_val = action(i, command, matrix, NSSSSAction)
 
     # Push the SSAction to the stack
     matrix.push(return_val, None, i)

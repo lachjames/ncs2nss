@@ -209,11 +209,11 @@ class NCSProgram:
             df_subs[sub_name].commands, _, return_tails = data_flow.df_analysis(df_subs[sub_name], parsed_subs, global_data, n_pass=1)
             sub_tails[sub_name] = return_tails
 
-        for sub_name in parsed_subs:
-            print("Sub {}".format(sub_name))
-            for i, line in enumerate(df_subs[sub_name].commands):
-                print("{}: {}".format(i, line))
-            print()
+        # for sub_name in parsed_subs:
+        #     print("Sub {}".format(sub_name))
+        #     for i, line in enumerate(df_subs[sub_name].commands):
+        #         print("{}: {}".format(i, line))
+        #     print()
 
         print("Performing control-flow analysis")
         # Reduce subroutines using control flow analysis

@@ -14,7 +14,7 @@ class ControlFlowAnalysis:
             block.dominators = dominators[block]
 
         for block in basic_blocks:
-            print(block)
+            # print(block)
             if block is basic_blocks[0]:
                 print("Setting {}.idom to None as it's the header".format(block))
                 block.idom = None
@@ -49,7 +49,7 @@ class ControlFlowAnalysis:
         for i, step in enumerate(self.derived_sequence()):
             ## print("Calculated DS step", i)
             self.steps.append(step)
-            step.draw("graphs/{}_step_{}.png".format(subroutine.name, i))
+            # step.draw("graphs/{}_step_{}.png".format(subroutine.name, i))
 
     def draw(self, loc):
         self.cfg.draw(loc)

@@ -37,8 +37,8 @@ def main():
 def df_analysis(subroutine, subroutines, global_data, n_pass):
     blocks, matrix, return_tails = analyze_blocks(subroutine, subroutines, global_data, n_pass)
     # print(matrix)
-    with open("html/{}.html".format(subroutine.name), "w") as f:
-        f.write(matrix.html())
+    # with open("html/{}.html".format(subroutine.name), "w") as f:
+    #     f.write(matrix.html())
 
     # print(matrix.var_names)
     # print(matrix.types)
